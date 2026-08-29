@@ -1,4 +1,7 @@
-platform :ios, '13.0'
+# Firebase's iOS SDK 12.x (pulled in by firebase_core / firebase_messaging for
+# push notifications) requires iOS 15.0+ — CocoaPods refuses to resolve
+# firebase_core below it. Matches the buyer app's floor.
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -26,6 +29,27 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 
 flutter_ios_podfile_setup
 
+# agora_rtc_engine (AgoraRtcEngine_Special_iOS) and agora_rtm (AgoraRtm) both vendor
+# aosl.xcframework, so Pods-Runner ends up with two frameworks of the same name.
+# Keep the RTC copy and strip RTM's — it's the same library.
+pre_install do |installer|
+  installer.analysis_result.specifications.each do |spec|
+    next unless spec.name.start_with?('AgoraRtm')
+
+    strip_aosl = lambda do |attrs|
+      frameworks = attrs['vendored_frameworks']
+      next if frameworks.nil?
+      attrs['vendored_frameworks'] = Array(frameworks).reject { |f| f.include?('aosl.xcframework') }
+    end
+
+    strip_aosl.call(spec.attributes_hash)
+    %w[ios osx tvos watchos visionos].each do |platform|
+      platform_attrs = spec.attributes_hash[platform]
+      strip_aosl.call(platform_attrs) if platform_attrs.is_a?(Hash)
+    end
+  end
+end
+
 target 'Runner' do
   use_frameworks!
 
@@ -35,8 +59,34 @@ target 'Runner' do
   end
 end
 
+# Permissions the app actually asks for at runtime through permission_handler.
+#
+# permission_handler_apple compiles each permission in or out at build time:
+# PermissionHandlerEnums.h defines every PERMISSION_* macro to 0 unless the host
+# project says otherwise, and a permission left at 0 falls through to
+# UnknownPermissionStrategy — checkPermissionStatus returns `denied` and
+# requestPermission returns `permanentlyDenied` *without ever calling
+# AVCaptureDevice*. Nothing prompts, and because iOS only adds an app's Camera /
+# Microphone rows to Settings once the app has really asked, there is no toggle
+# there to fix it with either. So the auction room could never be entered on an
+# iPhone. Anything added to this list needs its NS*UsageDescription in
+# Runner/Info.plist too, or the app is terminated the moment it asks.
+PERMISSION_MACROS = %w[
+  PERMISSION_CAMERA=1
+  PERMISSION_MICROPHONE=1
+]
+
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      # Not `||=`: Xcode already seeds this with DEBUG=1 on Debug builds, and a
+      # plain assignment would either be skipped there or wipe what's there.
+      existing = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+      existing = [existing] if existing.is_a?(String)
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] =
+        existing + (PERMISSION_MACROS - existing)
+    end
   end
 end

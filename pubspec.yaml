@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+2
+version: 1.0.5+22
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -30,23 +30,39 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Ships Material/Cupertino's own Norwegian strings (date pickers, the
+  # cut/copy/paste menu). Without it those stay English while our UI is nb.
+  flutter_localizations:
+    sdk: flutter
 
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.2
   google_fonts: ^6.2.1
   get: ^4.6.6
   shared_preferences: ^2.2.0
-  mobile_scanner: ^4.0.1
-  flutter_dotenv: ^6.0.1
+  mobile_scanner: ^7.2.0
   http: ^1.2.0
   http_parser: ^4.0.2
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   image_picker: ^1.0.7
+  file_picker: ^11.0.3        # CV upload on the become-a-seller application
   supabase_flutter: ^2.8.0
   app_links: ^7.0.0
+  url_launcher: ^6.3.2   # Opens the seller's social links in the system browser
+
+  # ── Live auction room (seller = broadcaster) ──────────────────────────────
+  agora_rtc_engine: ^6.5.4   # RTC — live video (seller publishes camera + mic)
+  agora_rtm: ^2.2.5          # RTM 2.x Signaling — live-auction chat
+  web_socket_channel: ^3.0.1 # Auction snapshot/bid transport (/ws/auction)
+  permission_handler: ^11.3.1 # Runtime camera + mic grants before broadcasting
+  uuid: ^4.5.1               # Stable deviceId + WS/chat requestIds
+  image_cropper: ^12.2.1
+
+  # ── Push notifications (FCM) ──────────────────────────────────────────────
+  firebase_core: ^4.12.1
+  firebase_messaging: ^16.4.3          # FCM token + message streams
+  flutter_local_notifications: ^22.1.0  # Draws foreground pushes on Android
+  device_info_plus: ^10.1.0             # deviceName on the device registration
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -68,7 +84,7 @@ flutter_launcher_icons:
   android: true
   ios: true
   remove_alpha_ios: true
-  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_background: "#000000"
   adaptive_icon_foreground: "assets/logo/app_icon_foreground.png"
 
 # For information on the generic Dart part of this file, see the
@@ -86,7 +102,8 @@ flutter:
     - .env
     - assets/translations/en.json
     - assets/translations/nb.json
-    - assets/logo/splash_icon.png
+    - assets/logo/app_icon.png
+    - assets/logo/app_loading.png
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a

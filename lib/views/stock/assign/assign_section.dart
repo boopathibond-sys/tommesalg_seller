@@ -13,6 +13,7 @@ import '../shared/assigned_product_quick_view.dart';
 import '../shared/sku_products_section.dart';
 import '../shared/stock_widgets.dart';
 import 'assign_products_panel.dart';
+import '../../../core/localization/translation_keys.dart';
 
 /// Assign to SKU — search for a SKU (`GET /locations/suggest?q=`), pick one,
 /// then scan products or add a UPC manually. The scan / manual-entry flow lives
@@ -143,8 +144,8 @@ class AssignSectionState extends State<AssignSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const CustomText(
-          'Pick a SKU → scan products → save all',
+        CustomText(
+          TKeys.stAssignFlowHint.tr,
           fontSize: 12.5,
           fontWeight: FontWeight.w500,
           color: AppColors.textSecondary,
@@ -170,8 +171,8 @@ class AssignSectionState extends State<AssignSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const CustomText(
-          'Select SKU',
+        CustomText(
+          TKeys.stSelectSku.tr,
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
@@ -179,7 +180,7 @@ class AssignSectionState extends State<AssignSection> {
         const SizedBox(height: 10),
         StockSearchField(
           controller: _searchCtrl,
-          hint: 'Search SKU code or name…',
+          hint: TKeys.stSearchSkuHint.tr,
           icon: Icons.search_rounded,
           onChanged: _onQueryChanged,
           onSubmitted: (_) => _search(),
@@ -210,10 +211,10 @@ class AssignSectionState extends State<AssignSection> {
             );
           }
           if (!ctrl.hasSuggested) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: CustomText(
-                'Start typing to find a SKU.',
+                TKeys.stStartTypingSku.tr,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
                 color: AppColors.textMuted,
@@ -222,10 +223,10 @@ class AssignSectionState extends State<AssignSection> {
           }
           final items = ctrl.suggestions;
           if (items.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: CustomText(
-                'No SKUs match your search.',
+                TKeys.stNoSkusMatch.tr,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
                 color: AppColors.textMuted,
@@ -298,8 +299,8 @@ class AssignSectionState extends State<AssignSection> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppColors.inputBorder, width: 1),
                 ),
-                child: const CustomText(
-                  'Change',
+                child: CustomText(
+                  TKeys.csChange.tr,
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
                   color: AppColors.brandNavy,

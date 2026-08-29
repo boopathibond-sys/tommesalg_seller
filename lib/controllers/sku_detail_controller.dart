@@ -652,11 +652,20 @@ class SkuDetailController extends GetxController {
         return 'Unexpected response format.';
       }
 
+      // Prefer what the API says — e.g. a 409 CONFLICT carries
+      // "Product is already assigned to the target SKU", which is far more
+      // useful than any message we could guess from the status code.
+      final apiMessage = _apiErrorMessage(response);
+      if (apiMessage != null) return apiMessage;
+
       if (response.statusCode == 404) {
         return 'This product is no longer at this SKU.';
       }
       if (response.statusCode == 403) {
         return 'Warehouse is only available for managed sellers.';
+      }
+      if (response.statusCode == 409) {
+        return 'This product is already assigned to that SKU.';
       }
       if (response.statusCode == 422) {
         return 'Please choose a different target SKU.';
@@ -669,6 +678,21 @@ class SkuDetailController extends GetxController {
     } finally {
       _isSaving.value = false;
     }
+  }
+
+  /// Pulls `error.message` out of a failed response, or null when the payload
+  /// doesn't carry one.
+  String? _apiErrorMessage(ApiResponse response) {
+    try {
+      final error = response.json['error'];
+      if (error is Map<String, dynamic>) {
+        final message = error['message'];
+        if (message is String && message.trim().isNotEmpty) {
+          return message.trim();
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   // ---------- Product discrepancy issue (quick-view report) ----------

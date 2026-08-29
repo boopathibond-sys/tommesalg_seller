@@ -261,4 +261,64 @@ class ProfileController extends GetxController {
       _uploadingImage.value = null;
     }
   }
+
+  // ---------- Account deletion (web handoff) ----------
+
+  /// Mints the one-time URL that signs this seller into the web **Slett
+  /// konto** page and returns it for the caller to open in the system
+  /// browser. Returns `null` on failure, with a readable string left in
+  /// [errorMessage].
+  ///
+  /// ```json
+  /// { "success": true,
+  ///   "data": { "url": "https://app.tommesalg.no/account/delete/handoff?code=…",
+  ///             "expiresAt": "2026-08-27T18:25:00.000Z" } }
+  /// ```
+  ///
+  /// The app never calls a delete-user API itself: confirmation, the 90-day
+  /// freeze and the eventual purge all happen on the web. Deliberately the
+  /// same endpoint the buyer app uses — it is account-scoped
+  /// (`/api/v1/account/…`, not `/api/v1/buyer/…`) and derives the account from
+  /// the bearer token, so one implementation serves both roles. It lives on
+  /// [EnvConfig.buyerBaseUrl], which is where that host is served from.
+  ///
+  /// The code inside the URL is single-use and expires in about five minutes,
+  /// so the caller must open it straight away rather than cache it. It also
+  /// has to go to the *system browser* rather than a WebView — the handoff
+  /// sets cookies that the web session needs to survive the redirect chain.
+  Future<String?> requestAccountDeletionHandoff() async {
+    _isSaving.value = true;
+    _errorMessage.value = null;
+
+    try {
+      final response = await _api.post(
+        '${EnvConfig.buyerBaseUrl}/api/v1/account/deletion-handoff',
+        // No body — the backend reads the account off the bearer token. The
+        // empty map is only here so a JSON Content-Type is still sent.
+        headers: AuthService.instance.authHeaders,
+        body: const <String, dynamic>{},
+        // The endpoint is account-scoped rather than seller-scoped, so a
+        // role-shaped error from it must not sign the seller out.
+        suppressAuthHandlers: true,
+      );
+
+      if (response.isSuccess) {
+        final body = response.json;
+        if (body['success'] == true && body['data'] is Map) {
+          final url = (body['data'] as Map)['url']?.toString();
+          if (url != null && url.isNotEmpty) return url;
+        }
+      }
+
+      log('Deletion handoff failed: ${response.statusCode} ${response.body}');
+      _errorMessage.value = null;
+      return null;
+    } catch (e) {
+      log('Deletion handoff error: $e');
+      _errorMessage.value = null;
+      return null;
+    } finally {
+      _isSaving.value = false;
+    }
+  }
 }

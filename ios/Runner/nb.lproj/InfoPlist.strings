@@ -1,0 +1,4 @@
+/* Norwegian (bokmål) — the app's primary language. */
+"NSCameraUsageDescription" = "Seller Squad trenger tilgang til kameraet slik at du kan skanne strekkoder og sende live-video i auksjonsrommet.";
+"NSMicrophoneUsageDescription" = "Seller Squad trenger tilgang til mikrofonen slik at kjøperne kan høre deg under en live-auksjon.";
+"NSPhotoLibraryUsageDescription" = "Seller Squad trenger tilgang til bildene dine slik at du kan legge til produktbilder i annonsene dine.";

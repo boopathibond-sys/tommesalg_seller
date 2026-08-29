@@ -25,11 +25,11 @@ import '../../core/localization/localization_service.dart';
 class LanguageViewModel extends GetxController {
   /// ISO-639-1 language code of the active locale (`en`, `ta`, …).
   final RxString languageCode =
-      LocalizationService.fallbackLocale.languageCode.obs;
+      LocalizationService.defaultLocale.languageCode.obs;
 
   /// ISO-3166-1 country code, or empty when the locale is region-free.
   final RxString countryCode =
-      (LocalizationService.fallbackLocale.countryCode ?? '').obs;
+      (LocalizationService.defaultLocale.countryCode ?? '').obs;
 
   /// Current locale, derived from the two reactive fields above.
   Locale get currentLocale => countryCode.value.isEmpty
@@ -63,8 +63,9 @@ class LanguageViewModel extends GetxController {
     await LocalizationService.persistLocale(locale);
   }
 
-  /// Resets to [LocalizationService.fallbackLocale] and clears the persisted
-  /// preference. Useful from a "Reset preferences" button in settings.
+  /// Resets to [LocalizationService.defaultLocale] (Norwegian) and clears the
+  /// persisted preference. Useful from a "Reset preferences" button in
+  /// settings.
   Future<void> resetToDefault() =>
-      changeLanguage(LocalizationService.fallbackLocale);
+      changeLanguage(LocalizationService.defaultLocale);
 }

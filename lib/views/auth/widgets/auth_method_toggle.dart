@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
+import '../../../core/localization/translation_keys.dart';
+import 'package:get/get.dart';
 
 /// Login method this screen supports. Lives next to the toggle so the auth
 /// UI compiles without a view-model layer.
@@ -94,13 +96,13 @@ class AuthMethodToggle extends StatelessWidget {
                   children: [
                     _Segment(
                       icon: Icons.lock_rounded,
-                      label: 'Password',
+                      label: TKeys.authPassword.tr,
                       selected: isPassword,
                       onTap: () => onChanged(LoginMethod.password),
                     ),
                     _Segment(
                       icon: Icons.mail_rounded,
-                      label: 'Email code',
+                      label: TKeys.authEmailCode.tr,
                       selected: !isPassword,
                       onTap: () => onChanged(LoginMethod.emailCode),
                     ),

@@ -12,11 +12,19 @@ import '../../../models/inventory_search.dart';
 import '../../../models/inventory_tag.dart';
 import '../../../models/location_suggestion.dart';
 import '../../scanner/barcode_scanner_view.dart';
+import '../shared/product_quick_view.dart';
 import '../shared/stock_widgets.dart';
 import '../sku_detail_view.dart';
+import '../../../core/localization/translation_keys.dart';
 
 /// The three warehouse-search modes the section can switch between.
 enum _SearchMode { upc, tag, sku }
+
+/// Opens the read-only quick view for a product hit (UPC / Tag results).
+typedef _OpenProduct = void Function(
+  SearchProduct product,
+  List<SearchPlacement> placements,
+);
 
 /// Warehouse search — a single adaptive search box driven by a mode selector:
 ///
@@ -179,6 +187,15 @@ class SearchSectionState extends State<SearchSection> {
 
   Future<void> _openSku(LocationSuggestion s) => _openSkuDetail(s.id, s.code);
 
+  /// Opens the read-only product quick view for a UPC / Tag product hit.
+  void _openProductQuickView(
+    SearchProduct product,
+    List<SearchPlacement> placements,
+  ) {
+    FocusScope.of(context).unfocus();
+    ProductQuickView.show(context, ctrl, product, placements);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cfg = _configFor(_mode);
@@ -204,12 +221,14 @@ class SearchSectionState extends State<SearchSection> {
             ctrl: ctrl,
             onRetry: _retryTagSearch,
             onOpenSku: (l) => _openSkuDetail(l.id, l.code),
+            onOpenProduct: _openProductQuickView,
           )
         else
           _UpcTagResults(
             ctrl: ctrl,
             onRetry: _runSearch,
             onOpenSku: (l) => _openSkuDetail(l.id, l.code),
+            onOpenProduct: _openProductQuickView,
           ),
       ],
     );
@@ -245,7 +264,7 @@ class SearchSectionState extends State<SearchSection> {
                 Expanded(
                   child: StockPillButton(
                     icon: Icons.search_rounded,
-                    label: 'Search',
+                    label: TKeys.stSearch.tr,
                     onTap: _runSearch,
                     expanded: true,
                   ),
@@ -281,12 +300,12 @@ class SearchSectionState extends State<SearchSection> {
 
       final tags = ctrl.tagSuggestions;
       if (tags.isEmpty) {
-        return const Padding(
-          padding: EdgeInsets.only(top: 12),
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
           child: Align(
             alignment: Alignment.centerLeft,
             child: CustomText(
-              'No matching tags.',
+              TKeys.stNoMatchingTags.tr,
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
               color: AppColors.textMuted,
@@ -319,25 +338,25 @@ class _ModeConfig {
 _ModeConfig _configFor(_SearchMode mode) {
   switch (mode) {
     case _SearchMode.upc:
-      return const _ModeConfig(
+      return _ModeConfig(
         Icons.qr_code_2_rounded,
-        'Enter or scan a product UPC…',
+        TKeys.stEnterOrScanUpc.tr,
         TextInputType.number,
-        'Type a UPC or scan a barcode to find a product.',
+        TKeys.stTypeUpcHint.tr,
       );
     case _SearchMode.tag:
-      return const _ModeConfig(
+      return _ModeConfig(
         Icons.sell_outlined,
-        'Search tags (e.g. christmas)…',
+        TKeys.stSearchTagsHint.tr,
         TextInputType.text,
-        'Search a tag, pick it, and list everything filed under it.',
+        TKeys.stSearchTagBody.tr,
       );
     case _SearchMode.sku:
-      return const _ModeConfig(
+      return _ModeConfig(
         Icons.inventory_2_outlined,
-        'Search SKU code or name…',
+        TKeys.stSearchSkuHint.tr,
         TextInputType.text,
-        'Find a SKU by its code or name, then tap to open it.',
+        TKeys.stFindSkuByCode.tr,
       );
   }
 }
@@ -359,7 +378,7 @@ class _ModeSelector extends StatelessWidget {
       child: Row(
         children: [
           _seg(_SearchMode.upc, Icons.qr_code_2_rounded, 'UPC'),
-          _seg(_SearchMode.tag, Icons.sell_outlined, 'Tag'),
+          _seg(_SearchMode.tag, Icons.sell_outlined, TKeys.stTag.tr),
           _seg(_SearchMode.sku, Icons.inventory_2_outlined, 'SKU'),
         ],
       ),
@@ -417,14 +436,14 @@ class _ScanButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.brandNavy, width: 1.2),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.qr_code_scanner_rounded,
+            const Icon(Icons.qr_code_scanner_rounded,
                 size: 17, color: AppColors.brandNavy),
-            SizedBox(width: 7),
+            const SizedBox(width: 7),
             CustomText(
-              'Scan',
+              TKeys.stScan.tr,
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: AppColors.brandNavy,
@@ -443,10 +462,12 @@ class _UpcTagResults extends StatelessWidget {
     required this.ctrl,
     required this.onRetry,
     required this.onOpenSku,
+    required this.onOpenProduct,
   });
   final InventoryController ctrl;
   final VoidCallback onRetry;
   final ValueChanged<InventoryLocation> onOpenSku;
+  final _OpenProduct onOpenProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -459,22 +480,26 @@ class _UpcTagResults extends StatelessWidget {
       }
 
       if (!ctrl.hasSearched) {
-        return const _SearchPlaceholder(
+        return _SearchPlaceholder(
           icon: Icons.search_rounded,
-          message: 'Enter a UPC or tag and tap Search.',
+          message: TKeys.stEnterUpcOrTag.tr,
         );
       }
 
       final result = ctrl.searchResult;
       final items = result?.items ?? const <InventorySearchItem>[];
       if (items.isEmpty) {
-        return const _SearchPlaceholder(
+        return _SearchPlaceholder(
           icon: Icons.search_off_rounded,
-          message: 'No matches found. Try another UPC or tag.',
+          message: TKeys.stNoMatchesFound.tr,
         );
       }
 
-      return _SearchResults(result: result!, onOpenSku: onOpenSku);
+      return _SearchResults(
+        result: result!,
+        onOpenSku: onOpenSku,
+        onOpenProduct: onOpenProduct,
+      );
     });
   }
 }
@@ -502,22 +527,22 @@ class _SkuSuggestResults extends StatelessWidget {
       }
 
       if (!ctrl.hasSuggested) {
-        return const _SearchPlaceholder(
+        return _SearchPlaceholder(
           icon: Icons.search_rounded,
-          message: 'Search a SKU code or name to see results here.',
+          message: TKeys.stSearchSkuToSee.tr,
         );
       }
 
       final items = ctrl.suggestions;
       if (items.isEmpty) {
-        return const _SearchPlaceholder(
+        return _SearchPlaceholder(
           icon: Icons.search_off_rounded,
-          message: 'No SKUs match your search.',
+          message: TKeys.stNoSkusMatch.tr,
         );
       }
 
       return _ResultGroup(
-        title: 'SKUs',
+        title: TKeys.stSkus.tr,
         count: items.length,
         rows: [
           for (final s in items)
@@ -585,10 +610,12 @@ class _TagSearchResults extends StatelessWidget {
     required this.ctrl,
     required this.onRetry,
     required this.onOpenSku,
+    required this.onOpenProduct,
   });
   final InventoryController ctrl;
   final VoidCallback onRetry;
   final ValueChanged<InventoryLocation> onOpenSku;
+  final _OpenProduct onOpenProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -599,9 +626,9 @@ class _TagSearchResults extends StatelessWidget {
       }
 
       if (!ctrl.hasSearched) {
-        return const _SearchPlaceholder(
+        return _SearchPlaceholder(
           icon: Icons.sell_outlined,
-          message: 'Search for a tag and pick one to list its items.',
+          message: TKeys.stSearchTagToList.tr,
         );
       }
 
@@ -609,6 +636,7 @@ class _TagSearchResults extends StatelessWidget {
         ctrl: ctrl,
         onRetry: onRetry,
         onOpenSku: onOpenSku,
+        onOpenProduct: onOpenProduct,
       );
     });
   }
@@ -678,9 +706,14 @@ class _SearchLoading extends StatelessWidget {
 /// Duplicate `placement` items (already covered by a `product` item) are
 /// dropped to avoid showing the same product twice.
 class _SearchResults extends StatelessWidget {
-  const _SearchResults({required this.result, required this.onOpenSku});
+  const _SearchResults({
+    required this.result,
+    required this.onOpenSku,
+    required this.onOpenProduct,
+  });
   final InventorySearchResult result;
   final ValueChanged<InventoryLocation> onOpenSku;
+  final _OpenProduct onOpenProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -716,7 +749,7 @@ class _SearchResults extends StatelessWidget {
       children: [
         if (locations.isNotEmpty) ...[
           _ResultGroup(
-            title: 'SKUs',
+            title: TKeys.stSkus.tr,
             count: locations.length,
             rows: [
               for (final l in locations)
@@ -727,9 +760,15 @@ class _SearchResults extends StatelessWidget {
         ],
         if (products.isNotEmpty)
           _ResultGroup(
-            title: 'Products',
+            title: TKeys.productsLabel.tr,
             count: products.length,
-            rows: [for (final p in products) _ProductRow(hit: p)],
+            rows: [
+              for (final p in products)
+                _ProductRow(
+                  hit: p,
+                  onTap: () => onOpenProduct(p.product, p.placements),
+                ),
+            ],
           ),
       ],
     );
@@ -891,10 +930,13 @@ class _SkuRow extends StatelessWidget {
   }
 }
 
-/// Compact product row — name + UPC, with small bin chips for placements.
+/// Compact product row — name + UPC and a "Quick view" button, with small bin
+/// chips for placements. The button opens the product quick view (info +
+/// report-a-discrepancy).
 class _ProductRow extends StatelessWidget {
-  const _ProductRow({required this.hit});
+  const _ProductRow({required this.hit, required this.onTap});
   final _ProductHit hit;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -931,6 +973,8 @@ class _ProductRow extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              _QuickViewButton(onTap: onTap),
             ],
           ),
           if (hit.placements.isNotEmpty) ...[
@@ -938,10 +982,46 @@ class _ProductRow extends StatelessWidget {
             Wrap(
               spacing: 6,
               runSpacing: 6,
-              children: [for (final p in hit.placements) _BinChip(placement: p)],
+              children: [
+                for (final p in hit.placements) _BinChip(placement: p),
+              ],
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Small navy "Quick view" text button shown on each product row.
+class _QuickViewButton extends StatelessWidget {
+  const _QuickViewButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: AppColors.brandNavy,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.visibility_outlined, size: 14, color: AppColors.white),
+            const SizedBox(width: 5),
+            CustomText(
+              TKeys.stQuickViewLower.tr,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              color: AppColors.white,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -33,18 +33,24 @@ class LocalizationService {
   // Configuration — everything you'd touch when shipping a new language.
   // ──────────────────────────────────────────────────────────────────────
 
-  /// Default locale used when the user has not picked one yet AND the device
-  /// locale isn't supported. Also used by GetX as the per-key fallback when a
-  /// translation is missing in the active locale.
+  /// The app's primary language. Used when the seller has not picked one yet
+  /// AND the device locale isn't one we ship — a Norwegian product defaults to
+  /// Norwegian rather than to the English fallback catalogue.
+  static const Locale defaultLocale = Locale('nb', 'NO');
+
+  /// Per-key fallback handed to `GetMaterialApp.fallbackLocale`. Kept as
+  /// English (the secondary language) so a key missing from `nb.json` renders
+  /// readable English instead of the raw key. Both catalogues are meant to
+  /// stay in sync; this is the safety net, not the plan.
   static const Locale fallbackLocale = Locale('en', 'US');
 
   /// Canonical list of locales the app ships translations for. Add a new
   /// `Locale(...)` row here and a matching `<code>.json` to spread the app
-  /// to a new language. English is first → it doubles as the [fallbackLocale]
-  /// for any key that's missing in the active translation.
+  /// to a new language. Norwegian is first — it is the app's primary
+  /// language; English follows as the secondary one.
   static const List<Locale> supportedLocales = <Locale>[
-    Locale('en', 'US'),
     Locale('nb', 'NO'),
+    Locale('en', 'US'),
   ];
 
   // ── SharedPreferences keys ────────────────────────────────────────────
@@ -58,8 +64,8 @@ class LocalizationService {
       const <String, Map<String, String>>{};
 
   /// The locale the app should boot with — either the persisted choice, the
-  /// device locale (when supported), or [fallbackLocale].
-  static Locale startLocale = fallbackLocale;
+  /// device locale (when supported), or [defaultLocale].
+  static Locale startLocale = defaultLocale;
 
   // ──────────────────────────────────────────────────────────────────────
   // Bootstrap
@@ -113,7 +119,7 @@ class LocalizationService {
     final device = PlatformDispatcher.instance.locale;
     if (_isSupported(device)) return device;
 
-    return fallbackLocale;
+    return defaultLocale;
   }
 
   static bool _isSupported(Locale locale) =>

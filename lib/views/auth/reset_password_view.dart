@@ -7,6 +7,8 @@ import '../../core/widgets/custom_text.dart';
 import 'login_view.dart';
 import 'widgets/auth_text_field.dart';
 import 'widgets/primary_login_button.dart';
+import '../../core/localization/translation_keys.dart';
+import 'package:get/get.dart';
 
 /// Step 2 of the password reset. Reached only via the recovery deep link, so
 /// the recovery session is already installed by [AuthService.setRecoverySession]
@@ -43,11 +45,11 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
     final confirm = _confirmCtrl.text;
 
     if (password.length < 8) {
-      setState(() => _error = 'Password must be at least 8 characters.');
+      setState(() => _error = TKeys.authPasswordTooShort.tr);
       return;
     }
     if (password != confirm) {
-      setState(() => _error = 'Passwords do not match.');
+      setState(() => _error = TKeys.authPasswordsDoNotMatch.tr);
       return;
     }
 
@@ -73,7 +75,7 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Could not update password. Please try again.';
+        _error = TKeys.authPasswordUpdateFailed.tr;
       });
       return;
     }
@@ -86,8 +88,8 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
 
     messenger.showSnackBar(
       SnackBar(
-        content: const Text(
-          'Password updated. Please sign in with your new password.',
+        content: Text(
+          TKeys.authPasswordUpdated.tr,
         ),
         backgroundColor: AppColors.brandNavy,
         behavior: SnackBarBehavior.floating,
@@ -120,8 +122,8 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CustomText(
-                'Set new password',
+              CustomText(
+                TKeys.authSetNewPassword.tr,
                 fontSize: 32,
                 fontWeight: FontWeight.w800,
                 height: 1.1,
@@ -129,9 +131,8 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
                 color: AppColors.textPrimary,
               ),
               const SizedBox(height: 6),
-              const CustomText(
-                'Choose a new password for your account. Use at least 8 '
-                'characters.',
+              CustomText(
+                TKeys.authSetNewPasswordBody.tr,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 height: 1.4,
@@ -139,8 +140,8 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
               ),
               const SizedBox(height: 22),
 
-              const CustomText(
-                'NEW PASSWORD',
+              CustomText(
+                TKeys.authNewPasswordCaps.tr,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.4,
@@ -161,8 +162,8 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
               ),
               const SizedBox(height: 18),
 
-              const CustomText(
-                'CONFIRM PASSWORD',
+              CustomText(
+                TKeys.authConfirmPasswordCaps.tr,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.4,
@@ -206,7 +207,7 @@ class _ResetPasswordViewState extends State<ResetPasswordView> {
               const SizedBox(height: 22),
 
               PrimaryLoginButton(
-                label: 'Update password',
+                label: TKeys.authUpdatePassword.tr,
                 busy: _busy,
                 onPressed: _busy ? null : _onSubmit,
               ),

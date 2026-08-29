@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<!--
+		Push Notifications capability. `development` makes debug/TestFlight
+		builds talk to the APNs sandbox; Xcode automatically promotes this to
+		`production` when exporting a release/App Store build, so this value
+		does not need to be flipped by hand.
+
+		This file is already wired into every build configuration via
+		CODE_SIGN_ENTITLEMENTS in project.pbxproj. The matching App ID on the
+		Apple Developer portal must also have Push Notifications enabled, and
+		an APNs key (.p8) must be uploaded to the Firebase iOS app — without
+		that, getToken() returns null on device and pushes never arrive.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
 </plist>

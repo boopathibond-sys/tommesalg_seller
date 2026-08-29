@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Tommesalg Seller</string>
+	<string>Seller Squad</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -29,6 +29,11 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>nb</string>
+		<string>en</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>tommesalg_seller_app</string>
 	<key>CFBundlePackageType</key>
@@ -41,10 +46,37 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!--
+		Export compliance, answered here so it is baked into every upload.
+
+		Without this key App Store Connect parks each build in "Missing
+		Compliance" and it never enters the review queue until someone answers
+		the encryption question by hand — silently costing a day per submission.
+
+		`false` is correct as long as the app only uses encryption that is
+		exempt under category 5 part 2: HTTPS/TLS to our own API, Supabase and
+		Agora, plus Apple's own Keychain/crypto. Adding proprietary or
+		non-standard cryptography later means flipping this to `true` and filing
+		the CCATS/self-classification paperwork.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Vi trenger tilgang til kameraet for å skanne strekkoder på produkter.</string>
+	<string>Seller Squad trenger tilgang til kameraet slik at du kan skanne strekkoder og sende live-video i auksjonsrommet.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Seller Squad trenger tilgang til mikrofonen slik at kjøperne kan høre deg under en live-auksjon.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Vi trenger tilgang til bildene dine for å legge til produktbilder.</string>
+	<string>Seller Squad trenger tilgang til bildene dine slik at du kan legge til produktbilder i annonsene dine.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!--
+			Lets APNs wake the app for `content-available: 1` pushes so a
+			silent payload can be processed while backgrounded. Alert pushes
+			do not need this — iOS draws those without waking us — but the
+			backend may send data-only payloads.
+		-->
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

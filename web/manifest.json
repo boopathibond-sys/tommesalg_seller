@@ -1,6 +1,6 @@
 {
-    "name": "tommesalg_seller_app",
-    "short_name": "tommesalg_seller_app",
+    "name": "Seller Squad",
+    "short_name": "Seller Squad",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

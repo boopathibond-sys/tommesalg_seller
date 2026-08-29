@@ -1,5 +1,8 @@
 plugins {
     id "com.android.application"
+    // START: FlutterFire Configuration
+    id 'com.google.gms.google-services'
+    // END: FlutterFire Configuration
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
@@ -24,11 +27,16 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace "com.tommesalg.seller"
     compileSdk 36
-    ndkVersion "27.0.12077973"
+    ndkVersion "28.2.13676358"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        // Required by flutter_local_notifications, which uses java.time to
+        // schedule notifications and therefore needs the desugared JDK APIs on
+        // pre-API-26 devices. Without it the build fails at
+        // :app:checkDebugAarMetadata.
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -44,12 +52,12 @@ android {
         applicationId "com.tommesalg.seller"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
-        minSdkVersion flutter.minSdkVersion
-        targetSdkVersion flutter.targetSdkVersion
+        minSdkVersion 26
+        targetSdkVersion 36
         // Set manually here (not driven by pubspec.yaml). Edit these directly
         // for each release.
-        versionCode 7
-        versionName "1.0.7"
+        versionCode 13
+        versionName "1.1.3"
     }
 
     signingConfigs {
@@ -72,10 +80,90 @@ android {
                 : signingConfigs.debug
         }
     }
+
+    // agora_rtc_engine (agora-special-full) and agora_rtm both bundle their own
+    // copy of libaosl.so, which collides during native-lib merge. Keep the
+    // first occurrence so both plugins can coexist.
+    packaging {
+        jniLibs {
+            // No phone on the Play Store runs x86 — those ABIs exist for Intel
+            // emulators, and Agora's native libs make them cost ~66 MB each in
+            // a fat APK. `ndk.abiFilters` can't do this: the Flutter Gradle
+            // plugin sets abiFilters itself from --target-platform and wins.
+            //
+            // Build with `-PkeepX86=true` if you ever need an Intel emulator.
+            def keepX86 = project.hasProperty('keepX86')
+            if (!keepX86) {
+                excludes += ['lib/x86/**', 'lib/x86_64/**']
+            }
+
+            // pickFirsts is evaluated ahead of excludes, so it has to be scoped
+            // to the ABIs we actually ship — a bare '**/libaosl.so' would drag
+            // the x86_64 copy back in past the exclude above.
+            pickFirsts += [
+                    'lib/arm64-v8a/libaosl.so',
+                    'lib/armeabi-v7a/libaosl.so',
+                    'lib/x86/libaosl.so',
+                    'lib/x86_64/libaosl.so'
+            ]
+            // agora_rtc_engine pulls `agora-special-full`, which ships every
+            // optional extension Agora makes — ~43 MB per ABI of AI audio,
+            // beauty filters, virtual background, lip sync and spatial audio.
+            // Extensions are plug-ins: the RTC core only dlopen()s one after an
+            // explicit enable call. We broadcast a plain camera + mic track and
+            // never call setBeautyEffectOptions / enableVirtualBackground /
+            // setAINSMode / enableSpatialAudio / enableFaceDetection /
+            // enableContentInspect / startScreenCapture, so none of these is
+            // ever loaded. Dropping them is invisible at runtime.
+            //
+            // If a future feature needs one, delete its line here — that alone
+            // is enough to bring the extension back.
+            excludes += [
+                '**/libagora_clear_vision_extension.so',            // video denoise / lowlight / colour enhance
+                '**/libagora_lip_sync_extension.so',
+                '**/libagora_spatial_audio_extension.so',
+                '**/libagora_segmentation_extension.so',            // virtual background
+                '**/libagora_face_capture_extension.so',
+                '**/libagora_face_detection_extension.so',
+                '**/libagora_audio_beauty_extension.so',
+                '**/libagora_content_inspect_extension.so',
+                '**/libagora_video_quality_analyzer_extension.so',
+                '**/libagora_video_av1_encoder_extension.so',       // AV1 — we publish H.264
+                '**/libagora_screen_capture_extension.so',
+                '**/libagora_ai_noise_suppression_extension.so',    // core SDK keeps its own non-AI ANS
+                '**/libagora_ai_noise_suppression_ll_extension.so',
+                '**/libagora_ai_echo_cancellation_extension.so',    // core SDK keeps its own non-AI AEC
+                '**/libagora_ai_echo_cancellation_ll_extension.so',
+            ]
+
+            // DO NOT exclude libagora_ffmpeg.so / libagora-fdkaac.so.
+            //
+            // They look like optional media-player codecs (createMediaPlayer /
+            // startAudioMixing / playEffect — none of which this app calls), but
+            // they are NOT dlopen()ed plug-ins like the extensions above: both
+            // are DT_NEEDED entries of libagora-rtc-sdk.so itself. Stripping
+            // either one makes the dynamic linker fail to load the core RTC SDK,
+            // so `System.loadLibrary("agora-rtc-sdk")` throws
+            // UnsatisfiedLinkError inside AgoraRtcNgPlugin and the app dies the
+            // moment the seller opens the auction room:
+            //
+            //   java.lang.UnsatisfiedLinkError: dlopen failed:
+            //     library "libagora_ffmpeg.so" not found:
+            //     needed by .../lib/arm64-v8a/libagora-rtc-sdk.so
+            //
+            // Verify before excluding any further Agora lib:
+            //   llvm-readelf -d libagora-rtc-sdk.so | grep NEEDED
+            // Anything listed there ships; only libs absent from that list are
+            // safe to drop.
+        }
+    }
 }
 
 flutter {
     source '../..'
 }
 
-dependencies {}
+dependencies {
+    // Backing library for `coreLibraryDesugaringEnabled` above.
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+}

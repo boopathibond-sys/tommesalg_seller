@@ -1,5 +1,12 @@
 import 'package:flutter/services.dart';
 
+/// Reads the `.env` file that ships as a Flutter asset.
+///
+/// Assets are stored unencrypted inside the IPA/APK, so every value exposed
+/// here is effectively public. Only hostnames and the Supabase anon key belong
+/// in it — server-side credentials (payment, shipping, AI provider keys) must
+/// stay behind the backend. Adding a getter here for a real secret puts that
+/// secret in every user's hands.
 class EnvConfig {
   EnvConfig._();
 
@@ -28,15 +35,9 @@ class EnvConfig {
   /// URL / service secret never ship in the app.
   static String get buyerBaseUrl => _get('BUYER_BASE_URL');
   static String get supabaseProdUrl => _get('SUPABASE_PROD_URL');
+
+  /// Supabase's *anon* key — public by design (row-level security is what
+  /// protects the data), which is why it is the only key still allowed in the
+  /// bundled `.env`.
   static String get supabaseProdAnonKey => _get('SUPABASE_PROD_ANON_KEY');
-  static String get supabaseStagingUrl => _get('SUPABASE_STAGING_URL');
-  static String get supabaseStagingAnonKey => _get('SUPABASE_STAGING_ANON_KEY');
-  static String get googleMapKey => _get('GOOGLE_MAP_KEY');
-  static String get geminiApiKey => _get('GEMINI_API_KEY');
-  static String get bringApiUid => _get('BRING_API_UID');
-  static String get bringApiKey => _get('BRING_API_KEY');
-  static String get vippsClientId => _get('VIPPS_CLIENT_ID');
-  static String get vippsSubscriptionKey => _get('VIPPS_SUBSCRIPTION_KEY');
-  static String get vippsEnvironment => _get('VIPPS_ENVIRONMENT');
-  static String get stripePublishableKey => _get('STRIPE_PUBLISHABLE_KEY');
 }

@@ -10,6 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../models/inventory_location_detail.dart';
 import '../../../models/inventory_tag.dart';
+import '../../../core/localization/translation_keys.dart';
 
 /// SKU create / edit dialog (see design in
 /// `lib/raw/Screenshot 2026-06-04 at 7.42.37 PM.png`).
@@ -186,19 +187,19 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
   Future<void> _addTagFromSearch() async {
     final label = _tagSearchCtrl.text.trim();
     if (label.isEmpty) {
-      Get.snackbar('Missing info', 'Type a tag name to add.');
+      Get.snackbar(TKeys.stMissingInfo.tr, TKeys.stTypeTagName.tr);
       return;
     }
     final slug = _slugify(label);
     if (slug.isEmpty) {
-      Get.snackbar('Missing info', 'Enter a valid tag name.');
+      Get.snackbar(TKeys.stMissingInfo.tr, TKeys.stEnterValidTag.tr);
       return;
     }
 
     final tag = await ctrl.createTag(slug: slug, label: label);
     if (!mounted) return;
     if (tag == null) {
-      Get.snackbar('Error', ctrl.tagsError ?? 'Could not create tag.');
+      Get.snackbar(TKeys.errorTitle.tr, ctrl.tagsError ?? TKeys.stCouldNotCreateTag.tr);
       return;
     }
 
@@ -227,13 +228,13 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
   //       : _tagSlugCtrl.text.trim());
   //
   //   if (label.isEmpty || slug.isEmpty) {
-  //     Get.snackbar('Missing info', 'Enter a label for the new tag.');
+  //     Get.snackbar("Missing info", 'Enter a label for the new tag.');
   //     return;
   //   }
   //
   //   final tag = await ctrl.createTag(slug: slug, label: label);
   //   if (tag == null) {
-  //     Get.snackbar('Error', ctrl.tagsError ?? 'Could not create tag.');
+  //     Get.snackbar("Error", ctrl.tagsError ?? "Could not create tag.");
   //     return;
   //   }
   //
@@ -250,7 +251,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
   Future<void> _submit() async {
     final code = _codeCtrl.text.trim();
     if (code.isEmpty) {
-      Get.snackbar('Missing info', 'SKU code is required.');
+      Get.snackbar(TKeys.stMissingInfo.tr, TKeys.stSkuCodeRequired.tr);
       return;
     }
 
@@ -283,11 +284,11 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
     if (error == null) {
       Navigator.of(context).pop();
       Get.snackbar(
-        widget.isEdit ? 'Saved' : 'Created',
-        widget.isEdit ? 'SKU "$code" was updated.' : 'SKU "$code" was created.',
+        widget.isEdit ? TKeys.savedTitle.tr : TKeys.stCreatedTitle.tr,
+        widget.isEdit ? TKeys.stSkuUpdated.trParams({'code': code}) : TKeys.stSkuCreated.trParams({'code': code}),
       );
     } else {
-      Get.snackbar('Error', error);
+      Get.snackbar(TKeys.errorTitle.tr, error);
     }
   }
 
@@ -312,7 +313,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
               children: [
                 Expanded(
                   child: CustomText(
-                    widget.isEdit ? 'Edit SKU' : 'New SKU',
+                    widget.isEdit ? TKeys.stEditSku.tr : TKeys.stNewSku.tr,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
@@ -343,7 +344,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
                     children: [
                       Expanded(
                         child: _Field(
-                          label: 'ZONE',
+                          label: TKeys.stZoneCaps.tr,
                           controller: _zoneCtrl,
                           onChanged: _onCodeComponentChanged,
                         ),
@@ -351,7 +352,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: _Field(
-                          label: 'RACK',
+                          label: TKeys.stRackCaps.tr,
                           controller: _aisleCtrl,
                           onChanged: _onCodeComponentChanged,
                         ),
@@ -359,7 +360,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: _Field(
-                          label: 'SHELF',
+                          label: TKeys.stShelfCaps.tr,
                           controller: _shelfCtrl,
                           onChanged: _onCodeComponentChanged,
                         ),
@@ -370,7 +371,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
                   // Sort order is create-only (the PATCH edit body omits it).
                   if (!widget.isEdit) ...[
                     _Field(
-                      label: 'SORT ORDER',
+                      label: TKeys.stSortOrderCaps.tr,
                       controller: _sortCtrl,
                       keyboardType: TextInputType.number,
                       inputFormatters: [
@@ -384,28 +385,28 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
                   // editable. Editing it stops the auto-compose and never
                   // changes the location fields.
                   _Field(
-                    label: widget.isEdit ? 'SKU CODE' : 'SKU CODE *',
+                    label: widget.isEdit ? TKeys.stSkuCodeCaps.tr : TKeys.stSkuCodeRequiredCaps.tr,
                     controller: _codeCtrl,
-                    hint: 'Auto-filled from zone / rack / shelf',
+                    hint: TKeys.stAutoFilled.tr,
                     textCapitalization: TextCapitalization.characters,
                     onChanged: (_) => _codeEdited = true,
                   ),
                   const SizedBox(height: 16),
                   _Field(
-                    label: 'NAME',
+                    label: TKeys.stNameCaps.tr,
                     controller: _nameCtrl,
-                    hint: 'Optional display name',
+                    hint: TKeys.stOptionalDisplayName.tr,
                   ),
                   const SizedBox(height: 16),
                   _Field(
-                    label: 'NOTES',
+                    label: TKeys.stNotesCaps.tr,
                     controller: _notesCtrl,
                     maxLines: 3,
                   ),
                   const SizedBox(height: 22),
 
                   // ── SKU tags ───────────────────────────────────────────
-                  const _SectionLabel('SKU TAGS'),
+                  _SectionLabel(TKeys.stSkuTagsCaps.tr),
                   const SizedBox(height: 10),
 
                   // Selected tags — chips with a remove (×) action.
@@ -471,10 +472,10 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
                             !_selectedTags.any((s) => s.id == t.id))
                         .toList();
                     if (results.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 6),
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
                         child: CustomText(
-                          'No matching tags.',
+                          TKeys.stNoMatchingTags.tr,
                           fontSize: 12.5,
                           fontWeight: FontWeight.w500,
                           color: AppColors.textMuted,
@@ -526,7 +527,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
               child: Obx(
                 () => _PrimaryButton(
-                  label: widget.isEdit ? 'Save changes' : 'Create SKU',
+                  label: widget.isEdit ? TKeys.saveChanges.tr : TKeys.stCreateSku.tr,
                   loading: widget.isEdit
                       ? (widget.detailCtrl?.isSaving ?? false)
                       : ctrl.isCreatingLocation,
@@ -612,11 +613,11 @@ class _TagSearchField extends StatelessWidget {
                 fontSize: 13.5,
                 fontWeight: FontWeight.w600,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
-                hintText: 'Search tags…',
-                hintStyle: TextStyle(
+                hintText: TKeys.stSearchTagsShort.tr,
+                hintStyle: const TextStyle(
                   color: AppColors.textMuted,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w500,
@@ -657,13 +658,13 @@ class _AddTagButton extends StatelessWidget {
                   valueColor: AlwaysStoppedAnimation(AppColors.white),
                 ),
               )
-            : const Row(
+            : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_rounded, size: 16, color: AppColors.white),
-                  SizedBox(width: 5),
+                  const Icon(Icons.add_rounded, size: 16, color: AppColors.white),
+                  const SizedBox(width: 5),
                   CustomText(
-                    'New tag',
+                    TKeys.stNewTag.tr,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
                     color: AppColors.white,

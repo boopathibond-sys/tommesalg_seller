@@ -16,21 +16,32 @@ class ApiClient {
   /// Invoked when any API responds with `error.code == "AUTH_ROLE_REQUIRED"`
   /// (the signed-in account is not a seller). Wire this up once at app start to
   /// clear the session and bounce to login.
+  ///
+  /// Only meaningful for endpoints that *should* accept a seller. A call to an
+  /// endpoint gated to another role answers the same way, and signing the
+  /// seller out over that would be wrong — such calls pass
+  /// `suppressAuthHandlers: true`.
   void Function()? onRoleRequired;
 
   Future<ApiResponse> get(
     String url, {
     Map<String, String>? headers,
+    bool suppressAuthHandlers = false,
   }) async {
-    return _request('GET', url, headers: headers);
+    return _request('GET', url,
+        headers: headers, suppressAuthHandlers: suppressAuthHandlers);
   }
 
   Future<ApiResponse> post(
     String url, {
     Map<String, String>? headers,
     Object? body,
+    bool suppressAuthHandlers = false,
   }) async {
-    return _request('POST', url, headers: headers, body: body);
+    return _request('POST', url,
+        headers: headers,
+        body: body,
+        suppressAuthHandlers: suppressAuthHandlers);
   }
 
   Future<ApiResponse> put(
@@ -60,18 +71,23 @@ class ApiClient {
   /// Uploads a single file as `multipart/form-data`.
   ///
   /// [fieldName] is the form-data key (e.g. `file`) and [filePath] points to a
-  /// local image. The `Content-Type` header is intentionally dropped so the
+  /// local image. [fields] carries any text parts that go alongside the file
+  /// (endpoints like random-product create take the whole record as one
+  /// multipart body). The `Content-Type` header is intentionally dropped so the
   /// multipart boundary header is used instead.
   Future<ApiResponse> uploadFile(
     String url, {
     required String fieldName,
     required String filePath,
     Map<String, String>? headers,
+    Map<String, String>? fields,
+    bool suppressAuthHandlers = false,
   }) async {
     final uri = Uri.parse(url);
     final stopwatch = Stopwatch()..start();
 
-    _logRequest('POST (multipart)', url, headers, 'file: $filePath');
+    _logRequest('POST (multipart)', url, headers,
+        'file: $filePath${fields == null ? '' : ' fields: $fields'}');
 
     try {
       final request = http.MultipartRequest('POST', uri);
@@ -80,6 +96,7 @@ class ApiClient {
         if (key.toLowerCase() == 'content-type') return;
         request.headers[key] = value;
       });
+      if (fields != null) request.fields.addAll(fields);
       request.files.add(
         await http.MultipartFile.fromPath(
           fieldName,
@@ -100,11 +117,13 @@ class ApiClient {
         stopwatch.elapsedMilliseconds,
       );
 
-      if (streamed.statusCode == 401 && _isAuthExpired(responseBody)) {
-        onSessionExpired?.call();
-      }
-      if (_isRoleRequired(responseBody)) {
-        onRoleRequired?.call();
+      if (!suppressAuthHandlers) {
+        if (streamed.statusCode == 401 && _isAuthExpired(responseBody)) {
+          onSessionExpired?.call();
+        }
+        if (_isRoleRequired(responseBody)) {
+          onRoleRequired?.call();
+        }
       }
 
       return ApiResponse(
@@ -133,6 +152,15 @@ class ApiClient {
         return MediaType('image', 'png');
       case 'webp':
         return MediaType('image', 'webp');
+      // Documents — the seller-application CV upload rejects anything typed
+      // as octet-stream, so these three have to be stamped explicitly too.
+      case 'pdf':
+        return MediaType('application', 'pdf');
+      case 'doc':
+        return MediaType('application', 'msword');
+      case 'docx':
+        return MediaType('application',
+            'vnd.openxmlformats-officedocument.wordprocessingml.document');
       default:
         return null;
     }
@@ -143,6 +171,7 @@ class ApiClient {
     String url, {
     Map<String, String>? headers,
     Object? body,
+    bool suppressAuthHandlers = false,
   }) async {
     final uri = Uri.parse(url);
     final encodedBody = body != null ? jsonEncode(body) : null;
@@ -187,11 +216,13 @@ class ApiClient {
 
       _logResponse(method, url, response.statusCode, responseBody, stopwatch.elapsedMilliseconds);
 
-      if (response.statusCode == 401 && _isAuthExpired(responseBody)) {
-        onSessionExpired?.call();
-      }
-      if (_isRoleRequired(responseBody)) {
-        onRoleRequired?.call();
+      if (!suppressAuthHandlers) {
+        if (response.statusCode == 401 && _isAuthExpired(responseBody)) {
+          onSessionExpired?.call();
+        }
+        if (_isRoleRequired(responseBody)) {
+          onRoleRequired?.call();
+        }
       }
 
       return ApiResponse(
@@ -216,11 +247,7 @@ class ApiClient {
     if (headers != null && headers.isNotEmpty) {
       debugPrint('│ Headers:');
       headers.forEach((k, v) {
-        if (k.toLowerCase() == 'authorization') {
-          debugPrint('│   $k: ${v.substring(0, (v.length > 20 ? 20 : v.length))}…');
-        } else {
-          debugPrint('│   $k: $v');
-        }
+        debugPrint('│   $k: $v');
       });
     }
     if (body != null) {

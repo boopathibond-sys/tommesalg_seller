@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
+import '../../../core/localization/translation_keys.dart';
+import 'package:get/get.dart';
 
 /// Activity — recent warehouse events. Currently static placeholder content;
 /// wire to an events endpoint when the data layer lands.
@@ -10,28 +12,28 @@ class ActivitySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomText(
-          'Recent activity',
+          TKeys.stRecentActivity.tr,
           fontSize: 17,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
         ),
-        SizedBox(height: 14),
+        const SizedBox(height: 14),
         _EventTile(
           icon: Icons.add_box_rounded,
-          title: 'Placement created',
-          subtitle: 'Product added to bin A-01',
-          time: '2h ago',
+          title: TKeys.stPlacementCreated.tr,
+          subtitle: TKeys.stProductAddedToBin.tr,
+          time: TKeys.stTwoHoursAgo.tr,
         ),
-        SizedBox(height: 10),
+        const SizedBox(height: 10),
         _EventTile(
           icon: Icons.edit_rounded,
-          title: 'Location updated',
-          subtitle: 'Bin B-07 renamed',
-          time: 'Yesterday',
+          title: TKeys.stLocationUpdated.tr,
+          subtitle: TKeys.stBinRenamed.tr,
+          time: TKeys.stYesterday.tr,
         ),
       ],
     );

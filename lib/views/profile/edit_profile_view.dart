@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -8,6 +9,8 @@ import '../../core/widgets/custom_text.dart';
 import '../../models/seller_profile.dart';
 import '../auth/widgets/auth_text_field.dart';
 import '../auth/widgets/primary_login_button.dart';
+import 'widgets/social_link_field.dart';
+import '../../core/localization/translation_keys.dart';
 
 /// Edit screen for the seller's public profile. Pre-fills from the current
 /// [SellerProfile] and PATCHes the changes through [ProfileController].
@@ -37,6 +40,28 @@ class _EditProfileViewState extends State<EditProfileView> {
 
   late ProfileSections _sections;
 
+  /// Every text field, keyed — so the opening snapshot and the dirty check
+  /// can't drift apart when a field is added to the form.
+  late final Map<String, TextEditingController> _fields = {
+    'displayName': _displayName,
+    'businessName': _businessName,
+    'bio': _bio,
+    'slug': _slug,
+    'website': _website,
+    'instagram': _instagram,
+    'facebook': _facebook,
+    'youtube': _youtube,
+    'linkedin': _linkedin,
+    'tiktok': _tiktok,
+  };
+
+  /// What the form opened with. "Save changes" stays disabled until something
+  /// differs from this, so opening the screen and backing out can't PATCH a
+  /// no-op.
+  late final Map<String, String> _initialText;
+  late final Map<String, dynamic> _initialSections;
+  bool _dirty = false;
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +79,22 @@ class _EditProfileViewState extends State<EditProfileView> {
     _tiktok = TextEditingController(text: p.socialLinks.tiktok ?? '');
 
     _sections = p.sections;
+
+    _initialText = {for (final e in _fields.entries) e.key: e.value.text};
+    _initialSections = _sections.toJson();
+    for (final c in _fields.values) {
+      c.addListener(_recomputeDirty);
+    }
+  }
+
+  /// Runs on every keystroke, but only rebuilds when the answer actually
+  /// flips — typing in a field doesn't rebuild the form on each character.
+  void _recomputeDirty() {
+    final dirty =
+        _fields.entries.any((e) => e.value.text != _initialText[e.key]) ||
+            !mapEquals(_sections.toJson(), _initialSections);
+    if (dirty == _dirty) return;
+    setState(() => _dirty = dirty);
   }
 
   @override
@@ -73,11 +114,11 @@ class _EditProfileViewState extends State<EditProfileView> {
 
   Future<void> _save() async {
     if (_displayName.text.trim().isEmpty) {
-      Get.snackbar('Required', 'Display name cannot be empty');
+      Get.snackbar(TKeys.epRequired.tr, TKeys.epDisplayNameEmpty.tr);
       return;
     }
     if (_businessName.text.trim().isEmpty) {
-      Get.snackbar('Required', 'Business name cannot be empty');
+      Get.snackbar(TKeys.epRequired.tr, TKeys.epBusinessNameEmpty.tr);
       return;
     }
 
@@ -100,12 +141,12 @@ class _EditProfileViewState extends State<EditProfileView> {
     if (!mounted) return;
 
     if (ok) {
-      Get.snackbar('Saved', 'Your profile has been updated');
+      Get.snackbar(TKeys.savedTitle.tr, TKeys.epProfileUpdated.tr);
       Navigator.of(context).pop(true);
     } else {
       Get.snackbar(
-        'Error',
-        _profileCtrl.errorMessage ?? 'Could not update profile',
+        TKeys.errorTitle.tr,
+        _profileCtrl.errorMessage ?? TKeys.epCouldNotUpdate.tr,
       );
     }
   }
@@ -123,8 +164,8 @@ class _EditProfileViewState extends State<EditProfileView> {
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.brandNavy),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const CustomText(
-          'Edit Profile',
+        title: CustomText(
+          TKeys.epEditProfile.tr,
           fontSize: 18,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
@@ -139,103 +180,120 @@ class _EditProfileViewState extends State<EditProfileView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _label('Basic Information'),
+              _label(TKeys.epBasicInformation.tr),
               const SizedBox(height: 12),
               AuthTextField(
                 controller: _displayName,
                 icon: Icons.person_outline_rounded,
-                hint: 'Display name',
+                hint: TKeys.epDisplayName.tr,
               ),
               const SizedBox(height: 12),
               AuthTextField(
                 controller: _businessName,
                 icon: Icons.storefront_outlined,
-                hint: 'Business name',
+                hint: TKeys.epBusinessName.tr,
               ),
               const SizedBox(height: 12),
               AuthTextField(
                 controller: _slug,
                 icon: Icons.link_rounded,
-                hint: 'Public profile slug (e.g. bestshop)',
+                hint: TKeys.epPublicSlug.tr,
               ),
               const SizedBox(height: 12),
               _BioField(controller: _bio),
 
               const SizedBox(height: 28),
-              _label('Public Profile Sections'),
+              _label(TKeys.epPublicSections.tr),
               const SizedBox(height: 8),
-              const CustomText(
-                'Choose which blocks appear on your public profile.',
+              CustomText(
+                TKeys.epPublicSectionsBody.tr,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
                 color: AppColors.textMuted,
                 height: 1.4,
               ),
               const SizedBox(height: 8),
-              _sectionToggle('Header', _sections.header,
+              _sectionToggle(TKeys.epHeader.tr, _sections.header,
                   (v) => _sections = _sections.copyWith(header: v)),
-              _sectionToggle('Stats', _sections.stats,
+              _sectionToggle(TKeys.epStats.tr, _sections.stats,
                   (v) => _sections = _sections.copyWith(stats: v)),
-              _sectionToggle('Products', _sections.products,
+              _sectionToggle(TKeys.productsLabel.tr, _sections.products,
                   (v) => _sections = _sections.copyWith(products: v)),
-              _sectionToggle('Streams', _sections.streams,
+              _sectionToggle(TKeys.navStreams.tr, _sections.streams,
                   (v) => _sections = _sections.copyWith(streams: v)),
-              _sectionToggle('Business info', _sections.businessInfo,
+              _sectionToggle(TKeys.epBusinessInfo.tr, _sections.businessInfo,
                   (v) => _sections = _sections.copyWith(businessInfo: v)),
-              _sectionToggle('Account info', _sections.accountInfo,
+              _sectionToggle(TKeys.epAccountInfo.tr, _sections.accountInfo,
                   (v) => _sections = _sections.copyWith(accountInfo: v)),
-              _sectionToggle('Social links', _sections.socialLinks,
+              _sectionToggle(TKeys.socialLinksLabel.tr, _sections.socialLinks,
                   (v) => _sections = _sections.copyWith(socialLinks: v)),
 
               const SizedBox(height: 28),
-              _label('Social Links'),
+              _label(TKeys.epSocialLinksTitle.tr),
+              const SizedBox(height: 8),
+              CustomText(
+                TKeys.epSocialLinksBody.tr,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textMuted,
+                height: 1.4,
+              ),
               const SizedBox(height: 12),
-              AuthTextField(
+              SocialLinkField(
+                platform: 'Website',
                 controller: _website,
                 icon: Icons.language_rounded,
-                hint: 'Website (https://...)',
+                hint: TKeys.epWebsiteHint.tr,
                 keyboardType: TextInputType.url,
               ),
               const SizedBox(height: 12),
-              AuthTextField(
+              SocialLinkField(
+                platform: 'Instagram',
                 controller: _instagram,
                 icon: Icons.camera_alt_outlined,
-                hint: 'Instagram handle',
+                hint: TKeys.epInstagramHint.tr,
               ),
               const SizedBox(height: 12),
-              AuthTextField(
+              SocialLinkField(
+                platform: 'Facebook',
                 controller: _facebook,
                 icon: Icons.facebook_rounded,
                 hint: 'Facebook',
               ),
               const SizedBox(height: 12),
-              AuthTextField(
+              SocialLinkField(
+                platform: 'YouTube',
                 controller: _youtube,
                 icon: Icons.play_circle_outline_rounded,
                 hint: 'YouTube',
               ),
               const SizedBox(height: 12),
-              AuthTextField(
+              SocialLinkField(
+                platform: 'LinkedIn',
                 controller: _linkedin,
                 icon: Icons.work_outline_rounded,
                 hint: 'LinkedIn',
               ),
               const SizedBox(height: 12),
-              AuthTextField(
+              SocialLinkField(
+                platform: 'TikTok',
                 controller: _tiktok,
                 icon: Icons.music_note_rounded,
                 hint: 'TikTok',
               ),
 
               const SizedBox(height: 32),
-              Obx(
-                () => PrimaryLoginButton(
-                  label: 'Save changes',
-                  busy: _profileCtrl.isSaving,
+              Obx(() {
+                final busy = _profileCtrl.isSaving;
+                return PrimaryLoginButton(
+                  label: TKeys.saveChanges.tr,
+                  busy: busy,
                   showArrow: false,
-                  onPressed: _profileCtrl.isSaving ? null : _save,
-                ),
-              ),
+                  // Null keeps the button dimmed and inert — nothing to save
+                  // until the form differs from what it opened with.
+                  onPressed: busy || !_dirty ? null : _save,
+                );
+              }),
             ],
           ),
         ),
@@ -270,7 +328,10 @@ class _EditProfileViewState extends State<EditProfileView> {
             value: value,
             // activeThumbColor: AppColors.brandNavy,
             activeTrackColor: AppColors.brandYellow,
-            onChanged: (v) => setState(() => onChanged(v)),
+            onChanged: (v) {
+              setState(() => onChanged(v));
+              _recomputeDirty();
+            },
           ),
         ],
       ),
@@ -312,14 +373,14 @@ class _BioField extends StatelessWidget {
                 fontWeight: FontWeight.w500,
                 color: AppColors.textPrimary,
               ),
-              decoration: const InputDecoration(
-                hintText: 'About your store…',
-                hintStyle: TextStyle(
+              decoration: InputDecoration(
+                hintText: TKeys.epAboutStoreHint.tr,
+                hintStyle: const TextStyle(
                   color: AppColors.textMuted,
                   fontWeight: FontWeight.w500,
                 ),
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,

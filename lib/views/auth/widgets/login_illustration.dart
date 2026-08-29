@@ -9,59 +9,74 @@ import '../../../core/theme/app_colors.dart';
 /// Composed entirely of Flutter primitives + a small `CustomPainter` for the
 /// mascot's smile, so the screen renders identically with no asset pipeline.
 class LoginIllustration extends StatelessWidget {
-  const LoginIllustration({super.key});
+  const LoginIllustration({super.key, this.height = 104});
+
+  /// Rendered height. The artwork is authored at [_designSize] and scaled
+  /// down to fit, so shrinking the header never re-flows the composition.
+  final double height;
+
+  /// The box the drawing below is laid out against.
+  static const Size _designSize = Size(320, 172);
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 220,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Soft cloud blobs sitting in the background.
-          const Positioned(top: 24,  left: 36,  child: _Cloud(size: 22)),
-          const Positioned(top: 60,  right: 28, child: _Cloud(size: 14)),
-          const Positioned(top: 12,  right: 90, child: _Cloud(size: 10)),
+      height: height,
+      width: double.infinity,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: _designSize.width,
+          height: _designSize.height,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Soft cloud blobs sitting in the background.
+              const Positioned(top: 24,  left: 36,  child: _Cloud(size: 22)),
+              const Positioned(top: 60,  right: 28, child: _Cloud(size: 14)),
+              const Positioned(top: 12,  right: 90, child: _Cloud(size: 10)),
 
-          // The little storefront — slightly left of centre.
-          Positioned(
-            top: 36,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Transform.translate(
-                offset: const Offset(-22, 0),
-                child: const _Storefront(),
+              // The little storefront — slightly left of centre.
+              Positioned(
+                top: 36,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Transform.translate(
+                    offset: const Offset(-22, 0),
+                    child: const _Storefront(),
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          // The plant peeking out beside the door.
-          Positioned(
-            top: 118,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Transform.translate(
-                offset: const Offset(34, 0),
-                child: const _PottedPlant(),
+              // The plant peeking out beside the door.
+              Positioned(
+                top: 118,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Transform.translate(
+                    offset: const Offset(34, 0),
+                    child: const _PottedPlant(),
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          // Floating yellow mascot.
-          Positioned(
-            top: 70,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Transform.translate(
-                offset: const Offset(58, 0),
-                child: const _Mascot(),
+              // Floating yellow mascot.
+              Positioned(
+                top: 70,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Transform.translate(
+                    offset: const Offset(58, 0),
+                    child: const _Mascot(),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -11,6 +11,8 @@ import '../models/inventory_search.dart';
 import '../models/location_suggestion.dart';
 import '../models/inventory_stats.dart';
 import '../models/inventory_tag.dart';
+import '../models/product_request_model.dart';
+import '../core/localization/translation_keys.dart';
 
 /// Drives the Warehouse / Stock tab's data.
 ///
@@ -487,6 +489,142 @@ class InventoryController extends GetxController {
     }
   }
 
+  /// Loads full product info for a search-result quick view via
+  /// `GET /api/v1/seller/products/{productId}/preview`.
+  ///
+  /// Search only carries `{ id, name, upc }`, so the quick view fetches the
+  /// richer fields (brand, images, prices, colour, sizes, description) here.
+  /// Returns a best-effort [ProductRequestProduct], or `null` on failure — the
+  /// quick view then falls back to the search hit's own fields.
+  Future<ProductRequestProduct?> fetchQuickViewProduct(String productId) async {
+    if (productId.isEmpty) return null;
+
+    final url = '${EnvConfig.baseUrl}/api/v1/seller/products/'
+        '${Uri.encodeComponent(productId)}/preview';
+
+    try {
+      final response = await _api.get(
+        url,
+        headers: AuthService.instance.authHeaders,
+      );
+
+      log('[quick-view] GET $url');
+      log('[quick-view] status=${response.statusCode} body=${response.body}');
+
+      if (!response.isSuccess) return null;
+
+      final body = response.json;
+      final data = body['data'];
+      if (body['success'] == true && data is Map<String, dynamic>) {
+        // The preview payload may carry the product directly or nested under
+        // `product` — handle both shapes.
+        final product =
+            (data['product'] as Map?)?.cast<String, dynamic>() ?? data;
+        return ProductRequestProduct.fromJson(product);
+      }
+      return null;
+    } catch (e) {
+      log('[quick-view] product fetch error: $e');
+      return null;
+    }
+  }
+
+  /// Fetches any reported discrepancy for a product via
+  /// `GET /api/v1/seller/inventory/products/{productId}/issue` (optionally
+  /// scoped to a `locationId`). Returns a [ProductRequestIssue] (description →
+  /// message + image urls), or null when there is no issue. Used to prefill the
+  /// search quick view's report form.
+  Future<ProductRequestIssue?> fetchProductIssue({
+    required String productId,
+    String? locationId,
+  }) async {
+    if (productId.isEmpty) return null;
+
+    final base = '${EnvConfig.baseUrl}/api/v1/seller/inventory/products/'
+        '${Uri.encodeComponent(productId)}/issue';
+    final uri = (locationId != null && locationId.isNotEmpty)
+        ? Uri.parse(base).replace(queryParameters: {'locationId': locationId})
+        : Uri.parse(base);
+
+    try {
+      final response = await _api.get(
+        uri.toString(),
+        headers: AuthService.instance.authHeaders,
+      );
+
+      log('[product-issue] GET $uri -> ${response.statusCode} ${response.body}');
+
+      if (!response.isSuccess) return null;
+      final body = response.json;
+      final data = body['data'];
+      if (body['success'] == true &&
+          data is Map<String, dynamic> &&
+          data['issue'] is Map<String, dynamic>) {
+        final issue = data['issue'] as Map<String, dynamic>;
+        final images =
+            (issue['imageUrls'] as List?)?.map((e) => e.toString()).toList() ??
+                const <String>[];
+        return ProductRequestIssue(
+          message: (issue['description'] ?? issue['message']) as String? ?? '',
+          imageUrls: images,
+        );
+      }
+      return null;
+    } catch (e) {
+      log('[product-issue] fetch error: $e');
+      return null;
+    }
+  }
+
+  /// Reports / updates the discrepancy for a product via
+  /// `PATCH /api/v1/seller/inventory/products/{productId}/issue` with
+  /// `{ message, imageKeys, locationId }`. [imageKeys] are the `s3Key`s of any
+  /// newly-uploaded images. Returns an error message on failure, or `null` on
+  /// success.
+  Future<String?> submitProductIssue({
+    required String productId,
+    required String message,
+    List<String> imageKeys = const [],
+    String? locationId,
+  }) async {
+    if (productId.isEmpty) return 'Missing product reference.';
+
+    try {
+      final body = <String, dynamic>{
+        'message': message,
+        if (imageKeys.isNotEmpty) 'imageKeys': imageKeys,
+        if (locationId != null && locationId.isNotEmpty)
+          'locationId': locationId,
+      };
+
+      final response = await _api.patch(
+        '${EnvConfig.baseUrl}/api/v1/seller/inventory/products/'
+        '${Uri.encodeComponent(productId)}/issue',
+        headers: AuthService.instance.authHeaders,
+        body: body,
+      );
+
+      log('[product-issue] PATCH status=${response.statusCode} body=${response.body}');
+
+      if (response.isSuccess) {
+        final json = response.json;
+        if (json['success'] == true) return null;
+        return 'Unexpected response format.';
+      }
+
+      if (response.statusCode == 403) {
+        return 'Warehouse is only available for managed sellers.';
+      }
+      if (response.statusCode == 422) {
+        return 'Please check the report and try again.';
+      }
+      return 'Failed to submit report: ${response.statusCode}';
+    } catch (e) {
+      log('[product-issue] submit error: $e');
+      return 'Network error. Please try again.';
+    }
+  }
+
   /// Resets the search result + error (e.g. when clearing the query).
   void clearSearch() {
     _searchResult.value = null;
@@ -570,20 +708,21 @@ class InventoryController extends GetxController {
         return const UpcLookupResult(UpcLookupStatus.notFound);
       }
       if (response.statusCode == 403) {
-        return const UpcLookupResult(
+        return UpcLookupResult(
           UpcLookupStatus.error,
-          message: 'Warehouse is only available for managed sellers.',
+          message: TKeys.svcManagedSellersOnly.tr,
         );
       }
       return UpcLookupResult(
         UpcLookupStatus.error,
-        message: 'Lookup failed: ${response.statusCode}',
+        message: TKeys.svcLookupFailed
+            .trParams({'code': '${response.statusCode}'}),
       );
     } catch (e) {
       log('UPC lookup error: $e');
-      return const UpcLookupResult(
+      return UpcLookupResult(
         UpcLookupStatus.error,
-        message: 'Network error. Please try again.',
+        message: TKeys.svcNetworkError.tr,
       );
     }
   }

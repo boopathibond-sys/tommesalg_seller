@@ -5,11 +5,15 @@ import '../../controllers/inventory_controller.dart';
 import '../../controllers/sku_detail_controller.dart';
 import '../../core/config/get_or_put.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/branded_refresh_indicator.dart';
 import '../../core/widgets/custom_text.dart';
 import '../../models/inventory_location_detail.dart';
+import '../../models/inventory_placement.dart';
 import 'assign/assign_products_panel.dart';
+import 'shared/assigned_product_quick_view.dart';
 import 'shared/sku_products_section.dart';
 import 'widgets/new_sku_dialog.dart';
+import '../../core/localization/translation_keys.dart';
 
 /// Result a [SkuDetailView] can pop with, so the caller can react — e.g.
 /// switch the Warehouse tab to "Assign to SKU".
@@ -48,6 +52,26 @@ class _SkuDetailViewState extends State<SkuDetailView> {
     super.dispose();
   }
 
+  /// After a known product is scanned / typed and assigned to this SKU, reload
+  /// the placements so the new row exists, then open its quick view (read-only
+  /// product info + the report-a-discrepancy functions, with a close button) —
+  /// mirroring the Assign-to-SKU flow.
+  Future<void> _onKnownProductAdded(String productId) async {
+    await ctrl.fetchPlacements();
+    if (!mounted) return;
+
+    InventoryPlacement? placement;
+    for (final p in ctrl.placements) {
+      if (p.productId == productId) {
+        placement = p;
+        break;
+      }
+    }
+    if (placement == null) return;
+
+    await AssignedProductQuickView.show(context, ctrl, placement);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -76,8 +100,8 @@ class _SkuDetailViewState extends State<SkuDetailView> {
                         detailCtrl: ctrl,
                       ),
               icon: const Icon(Icons.edit_rounded, size: 18),
-              label: const CustomText(
-                'Edit',
+              label: CustomText(
+                TKeys.edit.tr,
                 fontSize: 13.5,
                 fontWeight: FontWeight.w800,
                 color: AppColors.brandNavy,
@@ -107,8 +131,7 @@ class _SkuDetailViewState extends State<SkuDetailView> {
         final d = ctrl.detail;
         if (d == null) return const SizedBox.shrink();
 
-        return RefreshIndicator(
-          color: AppColors.brandNavy,
+        return BrandedRefreshIndicator(
           onRefresh: () async {
             await ctrl.fetchDetail();
             await ctrl.fetchPlacements();
@@ -125,16 +148,16 @@ class _SkuDetailViewState extends State<SkuDetailView> {
               const SizedBox(height: 24),
 
               // ── Assign product ──────────────────────────────────────────
-              const CustomText(
-                'ASSIGN PRODUCT',
+              CustomText(
+                TKeys.stAssignProductCaps.tr,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
                 color: AppColors.textMuted,
               ),
               const SizedBox(height: 4),
-              const CustomText(
-                'Scan a barcode or add a UPC manually to assign it to this SKU.',
+              CustomText(
+                TKeys.stAssignProductBody.tr,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
                 height: 1.4,
@@ -151,11 +174,13 @@ class _SkuDetailViewState extends State<SkuDetailView> {
                   // list too (it backs the Pending tab below).
                   ctrl.fetchPendingUnknown();
                 },
+                // Known product → open its quick view right after it's assigned.
+                onKnownProductAdded: _onKnownProductAdded,
               ),
 
               const SizedBox(height: 24),
-              const CustomText(
-                'PRODUCTS IN THIS SKU',
+              CustomText(
+                TKeys.stProductsInSkuCaps.tr,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
@@ -188,8 +213,8 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const CustomText(
-          'SKU CODE',
+        CustomText(
+          TKeys.stSkuCodeCaps.tr,
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.6,
@@ -225,14 +250,17 @@ class _Header extends StatelessWidget {
               filled: true,
             ),
             _StatusBadge(
-              label:
-                  '${detail.placementCount} PRODUCT${detail.placementCount == 1 ? '' : 'S'} ASSIGNED',
+              label: (detail.placementCount == 1
+                      ? TKeys.stProductAssignedBadge
+                      : TKeys.stProductsAssignedBadge)
+                  .trParams({'count': '${detail.placementCount}'}),
               color: AppColors.textSecondary,
             ),
             Obx(() {
               final ctrl = Get.find<SkuDetailController>(tag: detail.id);
               return _StatusBadge(
-                label: '${ctrl.primaryCount} PRIMARY',
+                label: TKeys.stPrimaryCountCaps
+                    .trParams({'count': '${ctrl.primaryCount}'}),
                 color: AppColors.brandYellow,
               );
             }),
@@ -292,8 +320,8 @@ class _TagsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const CustomText(
-            'SKU TAGS',
+          CustomText(
+            TKeys.stSkuTagsCaps.tr,
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.6,
@@ -301,8 +329,8 @@ class _TagsCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (detail.tags.isEmpty && detail.tagSlugs.isEmpty)
-            const CustomText(
-              'No tags',
+            CustomText(
+              TKeys.stNoTags.tr,
               fontSize: 13,
               fontWeight: FontWeight.w500,
               color: AppColors.textMuted,
@@ -401,8 +429,8 @@ class _DetailError extends StatelessWidget {
                 color: AppColors.brandNavy,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const CustomText(
-                'Try again',
+              child: CustomText(
+                TKeys.tryAgain.tr,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: AppColors.white,

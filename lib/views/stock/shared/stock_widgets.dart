@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../../controllers/inventory_controller.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
+import '../../../core/localization/translation_keys.dart';
 
 /// Rounded search/filter input matching the warehouse form chrome. Shared by
 /// the Overview, SKUs, and Search sections.
@@ -149,7 +150,7 @@ class StockStatsCards extends StatelessWidget {
           children: [
             Expanded(
               child: StockStatCard(
-                label: 'TOTAL',
+                label: TKeys.stTotalCaps.tr,
                 value: '${s?.totalSkus ?? 0}',
                 compact: true,
               ),
@@ -167,7 +168,7 @@ class StockStatsCards extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: StockStatCard(
-                label: 'ASSIGNED',
+                label: TKeys.stAssignedCaps.tr,
                 value: '${s?.productsAssigned ?? 0}',
                 compact: true,
               ),
@@ -182,14 +183,14 @@ class StockStatsCards extends StatelessWidget {
             children: [
               Expanded(
                 child: StockStatCard(
-                  label: 'TOTAL SKUS',
+                  label: TKeys.stTotalSkusCaps.tr,
                   value: '${s?.totalSkus ?? 0}',
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: StockStatCard(
-                  label: 'ACTIVE SKUS',
+                  label: TKeys.stActiveSkusCaps.tr,
                   value: '${s?.activeSkus ?? 0}',
                   valueColor: AppColors.mascotShadow,
                 ),
@@ -198,9 +199,9 @@ class StockStatsCards extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           StockStatCard(
-            label: 'PRODUCTS ASSIGNED',
+            label: TKeys.stProductsAssignedCaps.tr,
             value: '${s?.productsAssigned ?? 0}',
-            note: 'Sum of product assignments across all SKUs.',
+            note: TKeys.stSumOfAssignments.tr,
           ),
         ],
       );
@@ -356,14 +357,14 @@ class StockStatsError extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.error_outline_rounded,
+              const Icon(Icons.error_outline_rounded,
                   size: 18, color: AppColors.vipps),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: CustomText(
-                  'Something went wrong',
+                  TKeys.stSomethingWentWrong.tr,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
@@ -382,7 +383,7 @@ class StockStatsError extends StatelessWidget {
           const SizedBox(height: 14),
           StockPillButton(
             icon: Icons.refresh_rounded,
-            label: 'Try again',
+            label: TKeys.tryAgain.tr,
             onTap: onRetry,
           ),
         ],

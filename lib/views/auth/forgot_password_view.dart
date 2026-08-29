@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
 import 'widgets/auth_text_field.dart';
 import 'widgets/primary_login_button.dart';
+import '../../core/localization/translation_keys.dart';
 
 /// Step 1 of the password reset: collect the email and ask the buyer backend
 /// to send the recovery link.
@@ -45,7 +46,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     if (!accepted) {
       messenger.showSnackBar(
         _snack(
-          _authCtrl.errorMessage ?? 'Something went wrong. Please try again.',
+          _authCtrl.errorMessage ?? TKeys.authSomethingWrong.tr,
           AppColors.vipps,
         ),
       );
@@ -55,7 +56,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     // Generic, account-agnostic confirmation, then back to login.
     messenger.showSnackBar(
       _snack(
-        'If an account exists for $email, a reset link is on its way.',
+        TKeys.authResetLinkSent.trParams({'email': email}),
         AppColors.brandNavy,
       ),
     );
@@ -86,8 +87,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CustomText(
-                'Forgot password',
+              CustomText(
+                TKeys.authForgotPasswordTitle.tr,
                 fontSize: 32,
                 fontWeight: FontWeight.w800,
                 height: 1.1,
@@ -95,9 +96,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                 color: AppColors.textPrimary,
               ),
               const SizedBox(height: 6),
-              const CustomText(
-                "Enter your email and we'll send you a link to reset your "
-                'password.',
+              CustomText(
+                TKeys.authForgotPasswordBody.tr,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 height: 1.4,
@@ -116,7 +116,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
               AuthTextField(
                 controller: _emailCtrl,
                 icon: Icons.mail_outline_rounded,
-                hint: 'navn@tommesalg.no',
+                hint: TKeys.emailHintTommesalg.tr,
                 keyboardType: TextInputType.emailAddress,
                 autofillHints: const [AutofillHints.email],
               ),
@@ -136,7 +136,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
               const SizedBox(height: 22),
 
               Obx(() => PrimaryLoginButton(
-                    label: 'Send reset link',
+                    label: TKeys.authSendResetLink.tr,
                     busy: _authCtrl.isLoading,
                     onPressed: _authCtrl.isLoading ? null : _onSendLink,
                   )),

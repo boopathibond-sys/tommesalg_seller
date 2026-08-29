@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 
 import '../localization/translation_keys.dart';
 import '../theme/app_colors.dart';
+import 'branded_logo_loader.dart';
 import 'custom_text.dart';
 
 /// Centred loading state in the brand palette — yellow ring on the cream
@@ -28,7 +29,7 @@ class BrandedLoadingView extends StatelessWidget {
   /// `loading` translation when omitted.
   final String? label;
 
-  /// Overall ring size — bump it on a full-screen loader, leave the
+  /// Overall loader size — bump it on a full-screen loader, leave the
   /// default for inline placements.
   final double size;
 
@@ -40,19 +41,8 @@ class BrandedLoadingView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: size,
-              height: size,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.6,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  AppColors.accent.withOpacity(0.85),
-                ),
-                backgroundColor:
-                    AppColors.brandNavy.withOpacity(0.08),
-              ),
-            ),
-            const SizedBox(height: 14),
+            BrandedLogoLoader(size: size * 1.7),
+            const SizedBox(height: 16),
             CustomText(
               label ?? TKeys.loading.tr,
               fontSize: 12.5,

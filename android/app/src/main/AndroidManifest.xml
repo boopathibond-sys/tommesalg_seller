@@ -1,9 +1,38 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!--
+         Android 13 (API 33+) made notifications a runtime permission. Without
+         this declaration `FirebaseMessaging.requestPermission()` silently
+         resolves to `denied` on 13+ because the OS never shows the dialog.
+         On 12 and below it's a no-op (notifications are granted at install).
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Seller broadcasts live video + audio in the auction room (Agora RTC). -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!--
+         Android 11 (API 30+) hides other apps unless they're declared here.
+         Without this, url_launcher's canLaunchUrl()/launchUrl() fails for the
+         seller's social links because the browser is invisible to us.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+    </queries>
     <application
-        android:label="Tommesalg Seller"
+        android:label="Seller Squad"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -35,6 +64,33 @@
                 <data android:scheme="tommesalgseller" android:host="auth"/>
             </intent-filter>
         </activity>
+        <!-- uCrop screen behind image_cropper — required by the plugin so
+             profile / cover / card images can be adjusted before upload. -->
+        <activity
+            android:name="com.yalantis.ucrop.UCropActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+        <!--
+             Firebase Cloud Messaging defaults. These apply to *background*
+             notifications, which Android renders itself from the payload
+             before Dart ever runs — foreground messages are drawn by
+             PushNotificationService via flutter_local_notifications.
+
+             `default_notification_channel_id` must match the channel that
+             PushNotificationService creates at startup, otherwise Android 8+
+             drops background notifications whose payload names an unknown
+             channel.
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="tommesalg_default" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

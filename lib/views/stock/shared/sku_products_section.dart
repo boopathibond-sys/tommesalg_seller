@@ -15,6 +15,7 @@ import '../../../models/location_suggestion.dart';
 import '../../../models/pending_product.dart';
 import 'assigned_product_quick_view.dart';
 import 'stock_widgets.dart';
+import '../../../core/localization/translation_keys.dart';
 
 /// Assigned + pending products for a SKU, with an "Assigned / Pending" tab
 /// switcher and full edit + delete actions on both lists.
@@ -75,8 +76,8 @@ class _SkuProductsSectionState extends State<SkuProductsSection> {
       ),
       child: Row(
         children: [
-          _bottomTabButton('Assigned', 0),
-          _bottomTabButton('Pending', 1),
+          _bottomTabButton(TKeys.stAssigned.tr, 0),
+          _bottomTabButton(TKeys.saPending.tr, 1),
         ],
       ),
     );
@@ -122,21 +123,21 @@ class _AssignedProducts extends StatelessWidget {
   ) async {
     final placementId = placement.placementId;
     if (placementId == null || placementId.isEmpty) {
-      Get.snackbar('Error', 'This product cannot be removed right now.');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotRemoveNow.tr);
       return;
     }
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const CustomText(
-          'Remove product?',
+        title: CustomText(
+          TKeys.removeProductTitle.tr,
           fontSize: 16,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
         ),
         content: CustomText(
-          'Remove "${placement.productName}" from this SKU?',
+          TKeys.stRemoveFromSku.trParams({'name': placement.productName}),
           fontSize: 13.5,
           fontWeight: FontWeight.w500,
           color: AppColors.textSecondary,
@@ -144,8 +145,8 @@ class _AssignedProducts extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const CustomText(
-              'Cancel',
+            child: CustomText(
+              TKeys.cancelAction.tr,
               fontSize: 13.5,
               fontWeight: FontWeight.w700,
               color: AppColors.textSecondary,
@@ -153,8 +154,8 @@ class _AssignedProducts extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(true),
-            child: const CustomText(
-              'Remove',
+            child: CustomText(
+              TKeys.removeAction.tr,
               fontSize: 13.5,
               fontWeight: FontWeight.w800,
               color: AppColors.vipps,
@@ -168,16 +169,16 @@ class _AssignedProducts extends StatelessWidget {
 
     final error = await ctrl.deletePlacement(placementId);
     if (error == null) {
-      Get.snackbar('Removed', 'Product removed from SKU');
+      Get.snackbar(TKeys.removedTitle.tr, TKeys.stProductRemoved.tr);
     } else {
-      Get.snackbar('Error', error);
+      Get.snackbar(TKeys.errorTitle.tr, error);
     }
   }
 
   void _move(BuildContext context, InventoryPlacement placement) {
     final placementId = placement.placementId;
     if (placementId == null || placementId.isEmpty) {
-      Get.snackbar('Error', 'This product cannot be moved right now.');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotMoveNow.tr);
       return;
     }
     MovePlacementDialog.show(context, ctrl, placement);
@@ -218,13 +219,13 @@ class _AssignedProducts extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: AppColors.inputBorder, width: 1),
           ),
-          child: const Column(
+          child: Column(
             children: [
-              Icon(Icons.inventory_2_outlined,
+              const Icon(Icons.inventory_2_outlined,
                   size: 34, color: AppColors.textMuted),
-              SizedBox(height: 10),
+              const SizedBox(height: 10),
               CustomText(
-                'No products assigned yet',
+                TKeys.stNoProductsAssigned.tr,
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
@@ -274,23 +275,23 @@ class _PendingProducts extends StatelessWidget {
     PendingProduct product,
   ) async {
     if (product.itemId.isEmpty) {
-      Get.snackbar('Error', 'This product cannot be removed right now.');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotRemoveNow.tr);
       return;
     }
 
-    final name = product.name.isNotEmpty ? product.name : 'this product';
+    final name = product.name.isNotEmpty ? product.name : TKeys.stThisProduct.tr;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const CustomText(
-          'Delete product?',
+        title: CustomText(
+          TKeys.stDeleteProductTitle.tr,
           fontSize: 16,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
         ),
         content: CustomText(
-          'Are you sure you want to delete "$name"?',
+          TKeys.stDeleteConfirm.trParams({'name': name}),
           fontSize: 13.5,
           fontWeight: FontWeight.w500,
           color: AppColors.textSecondary,
@@ -298,8 +299,8 @@ class _PendingProducts extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const CustomText(
-              'Cancel',
+            child: CustomText(
+              TKeys.cancelAction.tr,
               fontSize: 13.5,
               fontWeight: FontWeight.w700,
               color: AppColors.textSecondary,
@@ -307,8 +308,8 @@ class _PendingProducts extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(true),
-            child: const CustomText(
-              'Delete',
+            child: CustomText(
+              TKeys.deleteAction2.tr,
               fontSize: 13.5,
               fontWeight: FontWeight.w800,
               color: AppColors.vipps,
@@ -322,9 +323,9 @@ class _PendingProducts extends StatelessWidget {
 
     final error = await ctrl.deletePendingUnknown(product.itemId);
     if (error == null) {
-      Get.snackbar('Deleted', 'Pending product removed');
+      Get.snackbar(TKeys.stDeletedTitle.tr, TKeys.stPendingRemoved.tr);
     } else {
-      Get.snackbar('Error', error);
+      Get.snackbar(TKeys.errorTitle.tr, error);
     }
   }
 
@@ -363,13 +364,13 @@ class _PendingProducts extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: AppColors.inputBorder, width: 1),
           ),
-          child: const Column(
+          child: Column(
             children: [
-              Icon(Icons.pending_actions_outlined,
+              const Icon(Icons.pending_actions_outlined,
                   size: 34, color: AppColors.textMuted),
-              SizedBox(height: 10),
+              const SizedBox(height: 10),
               CustomText(
-                'No pending products',
+                TKeys.stNoPendingProducts.tr,
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
@@ -444,7 +445,7 @@ class _PendingProductRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CustomText(
-                  product.name.isNotEmpty ? product.name : 'Product',
+                  product.name.isNotEmpty ? product.name : TKeys.saProduct.tr,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
@@ -453,14 +454,14 @@ class _PendingProductRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 CustomText(
-                  'UPC: ${product.upc ?? '—'}',
+                  '${TKeys.stUpcColon.tr} ${product.upc ?? '—'}',
                   fontSize: 11.5,
                   fontWeight: FontWeight.w500,
                   color: AppColors.textMuted,
                 ),
                 const SizedBox(height: 4),
                 CustomText(
-                  'Qty ${product.quantity}',
+                  TKeys.stQtyShort.trParams({'qty': '${product.quantity}'}),
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textSecondary,
@@ -557,7 +558,7 @@ class _AssignedProductRow extends StatelessWidget {
                 CustomText(
                   placement.productName.isNotEmpty
                       ? placement.productName
-                      : 'Product',
+                      : TKeys.saProduct.tr,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
@@ -566,7 +567,7 @@ class _AssignedProductRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 CustomText(
-                  'UPC: ${placement.upc ?? '—'}',
+                  '${TKeys.stUpcColon.tr} ${placement.upc ?? '—'}',
                   fontSize: 11.5,
                   fontWeight: FontWeight.w500,
                   color: AppColors.textMuted,
@@ -575,7 +576,7 @@ class _AssignedProductRow extends StatelessWidget {
                 Row(
                   children: [
                     CustomText(
-                      'Qty ${placement.quantity}',
+                      TKeys.stQtyShort.trParams({'qty': '${placement.quantity}'}),
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textSecondary,
@@ -589,8 +590,8 @@ class _AssignedProductRow extends StatelessWidget {
                           color: AppColors.brandYellow.withOpacity(0.3),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const CustomText(
-                          'PRIMARY',
+                        child: CustomText(
+                          TKeys.stPrimaryCaps.tr,
                           fontSize: 9.5,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.3,
@@ -619,14 +620,14 @@ class _AssignedProductRow extends StatelessWidget {
                     color: AppColors.brandNavy.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.remove_red_eye_outlined,
+                      const Icon(Icons.remove_red_eye_outlined,
                           size: 16, color: AppColors.brandNavy),
-                      SizedBox(width: 5),
+                      const SizedBox(width: 5),
                       CustomText(
-                        'Quick View',
+                        TKeys.quickView.tr,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                         color: AppColors.brandNavy,
@@ -744,7 +745,7 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
   Future<void> _save() async {
     final add = int.tryParse(_addCtrl.text.trim());
     if (add == null || add <= 0) {
-      Get.snackbar('Invalid quantity', 'Enter a quantity of 1 or more to add.');
+      Get.snackbar(TKeys.stInvalidQuantity.tr, TKeys.stEnterQtyOneOrMore.tr);
       return;
     }
     final error = await widget.ctrl.incrementPlacement(
@@ -755,9 +756,9 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
     if (!mounted) return;
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar('Saved', 'Added $add to product quantity.');
+      Get.snackbar(TKeys.savedTitle.tr, TKeys.stAddedToQuantity.trParams({'count': '$add'}));
     } else {
-      Get.snackbar('Error', error);
+      Get.snackbar(TKeys.errorTitle.tr, error);
     }
   }
 
@@ -806,9 +807,9 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
               ),
               child: Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: CustomText(
-                      'Current quantity',
+                      TKeys.stCurrentQuantity.tr,
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textSecondary,
@@ -825,7 +826,7 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
             ),
             const SizedBox(height: 14),
             _LabeledField(
-              label: 'ADD QUANTITY',
+              label: TKeys.stAddQuantityCaps.tr,
               controller: _addCtrl,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -843,9 +844,9 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
                 ),
                 child: Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: CustomText(
-                        'Primary location',
+                        TKeys.stPrimaryLocation.tr,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: AppColors.textPrimary,
@@ -862,7 +863,7 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
             ),
             const SizedBox(height: 18),
             Obx(() => _SaveButton(
-                  label: 'Save',
+                  label: TKeys.stSaveAction.tr,
                   loading: widget.ctrl.isSaving,
                   onTap: _save,
                 )),
@@ -953,11 +954,11 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
     final target = _target;
     final placementId = widget.placement.placementId;
     if (target == null) {
-      Get.snackbar('Pick a SKU', 'Choose a target SKU to move into.');
+      Get.snackbar(TKeys.stPickASku.tr, TKeys.stPickTargetSku.tr);
       return;
     }
     if (placementId == null || placementId.isEmpty) {
-      Get.snackbar('Error', 'This product cannot be moved right now.');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotMoveNow.tr);
       return;
     }
 
@@ -968,9 +969,24 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
     if (!mounted) return;
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar('Moved', 'Product moved to ${target.code}.');
+      Get.snackbar(
+        TKeys.stMovedTitle.tr,
+        TKeys.stProductMovedTo.trParams({'code': target.code}),
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.green.shade600,
+        colorText: AppColors.white,
+      );
     } else {
-      Get.snackbar('Error', error);
+      // Keep the sheet open so the seller can pick another SKU, and surface the
+      // API's own wording (e.g. "Product is already assigned to the target SKU").
+      Get.snackbar(
+        TKeys.stCouldNotMove.tr,
+        error,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.shade600,
+        colorText: AppColors.white,
+        duration: const Duration(seconds: 4),
+      );
     }
   }
 
@@ -993,7 +1009,7 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
               children: [
                 Expanded(
                   child: CustomText(
-                    'Move "${widget.placement.productName}"',
+                    TKeys.stMoveNamed.trParams({'name': widget.placement.productName}),
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textPrimary,
@@ -1009,8 +1025,8 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
               ],
             ),
             const SizedBox(height: 4),
-            const CustomText(
-              'Search a SKU to move this product into.',
+            CustomText(
+              TKeys.stSearchSkuToMove.tr,
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
               color: AppColors.textSecondary,
@@ -1018,7 +1034,7 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
             const SizedBox(height: 14),
             StockSearchField(
               controller: _searchCtrl,
-              hint: 'Search SKU code or name…',
+              hint: TKeys.stSearchSkuHint.tr,
               icon: Icons.search_rounded,
               onChanged: _onChanged,
               onSubmitted: (v) => _runSearch(v),
@@ -1028,8 +1044,8 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
             const SizedBox(height: 18),
             Obx(() => _SaveButton(
                   label: _target == null
-                      ? 'Move'
-                      : 'Move to ${_target!.code}',
+                      ? TKeys.stMove.tr
+                      : TKeys.stMoveTo.trParams({'code': _target!.code}),
                   loading: widget.ctrl.isSaving,
                   onTap: _move,
                 )),
@@ -1056,10 +1072,10 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
       );
     }
     if (!_searched) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: CustomText(
-          'Start typing to find a SKU.',
+          TKeys.stStartTypingSku.tr,
           fontSize: 13,
           fontWeight: FontWeight.w500,
           color: AppColors.textMuted,
@@ -1067,10 +1083,10 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
       );
     }
     if (_results.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: CustomText(
-          'No SKUs match your search.',
+          TKeys.stNoSkusMatch.tr,
           fontSize: 13,
           fontWeight: FontWeight.w500,
           color: AppColors.textMuted,
@@ -1243,7 +1259,7 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
         }
       });
       if (s3Key == null) {
-        Get.snackbar('Upload failed', 'Could not upload ${img.name}');
+        Get.snackbar(TKeys.csUploadFailed.tr, TKeys.stCouldNotUploadNamed.trParams({'name': img.name}));
       }
     }
   }
@@ -1254,11 +1270,11 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
     final name = _nameCtrl.text.trim();
     final qty = int.tryParse(_qtyCtrl.text.trim());
     if (name.isEmpty) {
-      Get.snackbar('Missing name', 'Enter a product name.');
+      Get.snackbar(TKeys.stMissingName.tr, TKeys.stEnterAProductName.tr);
       return;
     }
     if (qty == null || qty < 0) {
-      Get.snackbar('Invalid quantity', 'Enter a quantity of 0 or more.');
+      Get.snackbar(TKeys.stInvalidQuantity.tr, TKeys.stEnterQtyZeroOrMore.tr);
       return;
     }
 
@@ -1284,9 +1300,9 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
 
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar('Saved', 'Pending product updated');
+      Get.snackbar(TKeys.savedTitle.tr, TKeys.stPendingUpdated.tr);
     } else {
-      Get.snackbar('Error', error);
+      Get.snackbar(TKeys.errorTitle.tr, error);
     }
   }
 
@@ -1308,9 +1324,9 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: CustomText(
-                      'Edit pending product',
+                      TKeys.stEditPendingProduct.tr,
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: AppColors.textPrimary,
@@ -1324,7 +1340,7 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
                 ],
               ),
               const SizedBox(height: 8),
-              _PendingField(label: 'NAME', controller: _nameCtrl),
+              _PendingField(label: TKeys.stNameCaps.tr, controller: _nameCtrl),
               const SizedBox(height: 14),
               _PendingField(
                 label: 'UPC',
@@ -1333,14 +1349,14 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
               ),
               const SizedBox(height: 14),
               _PendingField(
-                label: 'QUANTITY',
+                label: TKeys.stQuantityCaps.tr,
                 controller: _qtyCtrl,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
               const SizedBox(height: 18),
-              const CustomText(
-                'IMAGES',
+              CustomText(
+                TKeys.stImagesCaps.tr,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
@@ -1437,7 +1453,7 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
                           ),
                         )
                       : CustomText(
-                          _uploading > 0 ? 'Uploading images…' : 'Save',
+                          _uploading > 0 ? TKeys.stUploadingImages.tr : TKeys.stSaveAction.tr,
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.3,

@@ -11,6 +11,7 @@ import '../sku_detail_view.dart';
 import '../widgets/new_sku_dialog.dart';
 import '../shared/stock_segment.dart';
 import '../shared/stock_widgets.dart';
+import '../../../core/localization/translation_keys.dart';
 
 /// SKUs — a single live SKU search (`GET /locations/suggest?q=`) plus New SKU.
 /// Typing queries the suggest endpoint; tapping a result opens the SKU detail
@@ -89,9 +90,9 @@ class _SkusSectionState extends State<SkusSection> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Expanded(
+            Expanded(
               child: CustomText(
-                'Search a SKU to view and assign products, or create a new one.',
+                TKeys.stSearchSkuOrCreate.tr,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
                 height: 1.4,
@@ -101,7 +102,7 @@ class _SkusSectionState extends State<SkusSection> {
             const SizedBox(width: 12),
             StockPillButton(
               icon: Icons.add_rounded,
-              label: 'New SKU',
+              label: TKeys.stNewSku.tr,
               dense: true,
               onTap: () => NewSkuDialog.show(context, ctrl),
             ),
@@ -112,7 +113,7 @@ class _SkusSectionState extends State<SkusSection> {
         // Single SKU search → suggest (auto-runs as you type)
         StockSearchField(
           controller: _searchCtrl,
-          hint: 'Search SKU code or name…',
+          hint: TKeys.stSearchSkuHint.tr,
           icon: Icons.search_rounded,
           onChanged: _onQueryChanged,
           onSubmitted: (_) => _search(),
@@ -131,16 +132,16 @@ class _SkusSectionState extends State<SkusSection> {
             );
           }
           if (!ctrl.hasSuggested) {
-            return const _SkuHint(
+            return _SkuHint(
               icon: Icons.inventory_2_outlined,
-              message: 'Start typing to find a SKU.',
+              message: TKeys.stStartTypingSku.tr,
             );
           }
           final items = ctrl.suggestions;
           if (items.isEmpty) {
-            return const _SkuHint(
+            return _SkuHint(
               icon: Icons.search_off_rounded,
-              message: 'No SKUs match your search.',
+              message: TKeys.stNoSkusMatch.tr,
             );
           }
           return Container(

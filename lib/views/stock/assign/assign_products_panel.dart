@@ -8,15 +8,18 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../controllers/inventory_controller.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/auto_quick_view_toggle.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../scanner/barcode_scanner_view.dart';
+import '../../../core/localization/translation_keys.dart';
 
-/// Reusable "assign products to a SKU" panel: a scan card, an "Add UPC
-/// manually" button, and the list of products added in this session. Used both
-/// in the Assign tab (after a SKU is picked) and on the SKU detail page (where
-/// the SKU is the one being viewed).
+/// Reusable "assign products to a SKU" panel: a scan card, a UPC field with a
+/// Thrown button, and the list of products added in this session. Used both in
+/// the Assign tab (after a SKU is picked) and on the SKU detail page (where the
+/// SKU is the one being viewed).
 ///
-/// Scanning or manual entry opens the same sheet (UPC pre-filled on scan),
+/// Scanning and the Thrown button run the same lookup → add flow; an unknown
+/// UPC from either falls through to the manual sheet (UPC pre-filled),
 /// which uploads images to `/product-request-issue-images` and POSTs the
 /// product to `/locations/{locationId}/unknown-product`. [onAdded] fires after
 /// a successful add so the host can refresh (e.g. the assigned-products list).
@@ -80,7 +83,7 @@ class _AssignProductsPanelState extends State<AssignProductsPanel> {
     if (_looking) return;
     final trimmed = upc.trim();
     if (trimmed.isEmpty) {
-      Get.snackbar('Error', 'Please enter a UPC');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.enterUpc.tr);
       return;
     }
 
@@ -108,11 +111,14 @@ class _AssignProductsPanelState extends State<AssignProductsPanel> {
           });
           widget.onAdded?.call();
           // Known product → let the host open its quick view (with the report
-          // functions) now that it's been assigned to the SKU.
-          widget.onKnownProductAdded?.call(result.productId!);
-          Get.snackbar('Success', 'Product added to SKU');
+          // functions) now that it's been assigned to the SKU — but only if the
+          // user left the auto quick-view toggle on.
+          if (AutoQuickViewPref.enabled) {
+            widget.onKnownProductAdded?.call(result.productId!);
+          }
+          Get.snackbar(TKeys.successTitle.tr, TKeys.stProductAddedToSku.tr);
         } else {
-          Get.snackbar('Error', error);
+          Get.snackbar(TKeys.errorTitle.tr, error);
         }
         break;
       case UpcLookupStatus.notFound:
@@ -122,7 +128,7 @@ class _AssignProductsPanelState extends State<AssignProductsPanel> {
         break;
       case UpcLookupStatus.error:
         setState(() => _looking = false);
-        Get.snackbar('Error', result.message ?? 'Something went wrong');
+        Get.snackbar(TKeys.errorTitle.tr, result.message ?? TKeys.stSomethingWentWrong.tr);
         break;
     }
   }
@@ -155,16 +161,20 @@ class _AssignProductsPanelState extends State<AssignProductsPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: AutoQuickViewToggle(
+            value: AutoQuickViewPref.enabled,
+            onChanged: (v) => setState(() => AutoQuickViewPref.enabled = v),
+          ),
+        ),
+        const SizedBox(height: 10),
         _AssignScanCard(onTap: _looking ? null : _openScanner),
         const SizedBox(height: 12),
         _UpcEntryRow(
           controller: _upcFieldCtrl,
           busy: _looking,
           onAdd: () => _processUpc(_upcFieldCtrl.text),
-        ),
-        const SizedBox(height: 12),
-        _AddUpcManuallyButton(
-          onTap: _looking ? null : () => _openManualUpcSheet(),
         ),
         // if (_items.isNotEmpty) ...[
         //   const SizedBox(height: 16),
@@ -319,19 +329,19 @@ class _AssignScanCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 16),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   CustomText(
-                    'Scan & add product',
+                    TKeys.scanAndAddProduct.tr,
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textPrimary,
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   CustomText(
-                    'Use the camera to scan the barcode.',
+                    TKeys.useCameraToScan.tr,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                     height: 1.3,
@@ -377,7 +387,7 @@ class _UpcEntryRow extends StatelessWidget {
             textInputAction: TextInputAction.done,
             onSubmitted: busy ? null : (_) => onAdd(),
             decoration: InputDecoration(
-              hintText: 'Enter UPC',
+              hintText: TKeys.enterUpcLabel.tr,
               prefixIcon: const Icon(Icons.qr_code_2_rounded,
                   size: 20, color: AppColors.textMuted),
               filled: true,
@@ -415,8 +425,8 @@ class _UpcEntryRow extends StatelessWidget {
                       valueColor: AlwaysStoppedAnimation(AppColors.white),
                     ),
                   )
-                : const CustomText(
-                    'Add',
+                : CustomText(
+                    TKeys.thrownLabel.tr,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: AppColors.white,
@@ -424,37 +434,6 @@ class _UpcEntryRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// "Add UPC manually" outlined button — opens the manual-entry sheet.
-class _AddUpcManuallyButton extends StatelessWidget {
-  const _AddUpcManuallyButton({required this.onTap});
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.brandNavy,
-          side: const BorderSide(color: AppColors.brandNavy),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        icon: const Icon(Icons.keyboard_alt_outlined, size: 20),
-        label: const CustomText(
-          'Add UPC manually',
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-          color: AppColors.brandNavy,
-        ),
-      ),
     );
   }
 }
@@ -581,7 +560,7 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
         }
       });
       if (s3Key == null) {
-        Get.snackbar('Upload failed', 'Could not upload ${img.name}');
+        Get.snackbar(TKeys.csUploadFailed.tr, TKeys.stCouldNotUploadNamed.trParams({'name': img.name}));
       }
     }
   }
@@ -614,8 +593,8 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
                 ),
               ),
               const SizedBox(height: 18),
-              const CustomText(
-                'Add image',
+              CustomText(
+                TKeys.stAddImage.tr,
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: AppColors.brandNavy,
@@ -623,13 +602,13 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
               const SizedBox(height: 16),
               _ImageSourceTile(
                 icon: Icons.photo_camera_outlined,
-                label: 'Take a photo',
+                label: TKeys.stTakeAPhoto.tr,
                 onTap: () => Navigator.of(context).pop(ImageSource.camera),
               ),
               const SizedBox(height: 12),
               _ImageSourceTile(
                 icon: Icons.photo_library_outlined,
-                label: 'Choose from gallery',
+                label: TKeys.stChooseFromGallery.tr,
                 onTap: () => Navigator.of(context).pop(ImageSource.gallery),
               ),
             ],
@@ -648,17 +627,17 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
 
     final upc = _upcController.text.trim();
     if (upc.isEmpty) {
-      Get.snackbar('Error', 'Please enter a UPC');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.enterUpc.tr);
       return;
     }
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      Get.snackbar('Error', 'Please enter product name');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.enterProductName.tr);
       return;
     }
     final quantity = int.tryParse(_qtyController.text.trim());
     if (quantity == null || quantity < 1) {
-      Get.snackbar('Error', 'Please enter a quantity of 1 or more');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.stEnterQuantityOne.tr);
       return;
     }
 
@@ -683,9 +662,9 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
           imagePaths: _images.map((e) => e.file.path).toList(),
         ),
       );
-      Get.snackbar('Success', 'Product added to SKU');
+      Get.snackbar(TKeys.successTitle.tr, TKeys.stProductAddedToSku.tr);
     } else {
-      Get.snackbar('Error', error);
+      Get.snackbar(TKeys.errorTitle.tr, error);
     }
   }
 
@@ -719,19 +698,19 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         CustomText(
-                          'Add UPC manually',
+                          TKeys.addUpcManually.tr,
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
                           color: AppColors.brandNavy,
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         CustomText(
-                          'Enter the UPC and product details to add it.',
+                          TKeys.addUpcManuallyBody.tr,
                           fontSize: 13,
                           color: AppColors.textSecondary,
                         ),
@@ -755,7 +734,7 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'UPC',
-                  hintText: 'Enter UPC number',
+                  hintText: TKeys.enterUpcNumber.tr,
                   filled: true,
                   fillColor: AppColors.inputFill,
                   border: OutlineInputBorder(
@@ -772,8 +751,8 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  labelText: 'Product Name',
-                  hintText: 'Enter name',
+                  labelText: TKeys.productNameLabel.tr,
+                  hintText: TKeys.enterNameHint.tr,
                   filled: true,
                   fillColor: AppColors.inputFill,
                   border: OutlineInputBorder(
@@ -792,8 +771,8 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
-                  labelText: 'Quantity',
-                  hintText: 'Enter quantity',
+                  labelText: TKeys.stQuantity.tr,
+                  hintText: TKeys.stEnterQuantity.tr,
                   filled: true,
                   fillColor: AppColors.inputFill,
                   border: OutlineInputBorder(
@@ -883,14 +862,14 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: AppColors.inputBorder),
                         ),
-                        child: const Column(
+                        child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.add_a_photo_outlined,
+                            const Icon(Icons.add_a_photo_outlined,
                                 color: AppColors.textMuted),
-                            SizedBox(height: 8),
+                            const SizedBox(height: 8),
                             CustomText(
-                              'Add Image',
+                              TKeys.addImage.tr,
                               fontSize: 12,
                               color: AppColors.textMuted,
                             ),
@@ -926,7 +905,7 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
                           ),
                         )
                       : CustomText(
-                          _uploading > 0 ? 'Uploading images…' : 'Add Product',
+                          _uploading > 0 ? TKeys.stUploadingImages.tr : TKeys.stAddProduct.tr,
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: AppColors.white,

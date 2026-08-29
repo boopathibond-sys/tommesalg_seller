@@ -10,6 +10,8 @@ import '../../../core/widgets/custom_text.dart';
 import '../shared/stock_segment.dart';
 import '../shared/stock_widgets.dart';
 import '../widgets/new_sku_dialog.dart';
+import '../../../core/localization/translation_keys.dart';
+import 'package:get/get.dart';
 
 /// Overview — stat cards on top, then quick actions to jump into the other
 /// warehouse sections (or create a new SKU).
@@ -91,8 +93,8 @@ class _OverviewSectionState extends State<OverviewSection> {
 
         const SizedBox(height: 20),
 
-        const CustomText(
-          'Quick actions',
+        CustomText(
+          TKeys.quickActions.tr,
           fontSize: 14,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
@@ -104,8 +106,8 @@ class _OverviewSectionState extends State<OverviewSection> {
             Expanded(
               child: _QuickActionCard(
                 icon: Icons.inventory_2_rounded,
-                title: 'Manage SKUs',
-                subtitle: 'Search & open SKUs',
+                title: TKeys.stManageSkus.tr,
+                subtitle: TKeys.stSearchOpenSkus.tr,
                 onTap: () => _go(StockSegment.skus),
               ),
             ),
@@ -113,8 +115,8 @@ class _OverviewSectionState extends State<OverviewSection> {
             Expanded(
               child: _QuickActionCard(
                 icon: Icons.add_box_rounded,
-                title: 'Assign to SKU',
-                subtitle: 'Scan products in',
+                title: TKeys.stAssignToSku.tr,
+                subtitle: TKeys.stScanProductsIn.tr,
                 onTap: () => _go(StockSegment.assign),
               ),
             ),
@@ -126,8 +128,8 @@ class _OverviewSectionState extends State<OverviewSection> {
             Expanded(
               child: _QuickActionCard(
                 icon: Icons.search_rounded,
-                title: 'Search',
-                subtitle: 'By UPC or tag',
+                title: TKeys.stSearch.tr,
+                subtitle: TKeys.stByUpcOrTag.tr,
                 onTap: () => _go(StockSegment.search),
               ),
             ),
@@ -135,8 +137,8 @@ class _OverviewSectionState extends State<OverviewSection> {
             Expanded(
               child: _QuickActionCard(
                 icon: Icons.add_rounded,
-                title: 'New SKU',
-                subtitle: 'Create a bin',
+                title: TKeys.stNewSku.tr,
+                subtitle: TKeys.stCreateABin.tr,
                 highlighted: true,
                 onTap: () => NewSkuDialog.show(context, ctrl),
               ),
@@ -261,52 +263,64 @@ class _QuickActionCard extends StatelessWidget {
         ? AppColors.white.withOpacity(0.7)
         : AppColors.textSecondary;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: highlighted ? AppColors.brandNavy : AppColors.inputBorder,
-            width: 1,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: highlighted ? AppColors.brandNavy : const Color(0xFFBFC7D2),
+        )
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              // Grey rather than the amber `inputBorder` — that colour reads as a
+              // highlight, which is the navy "New SKU" card's job. Mid grey, not
+              // the `borderGrey` hairline: these are white cards on a white page,
+              // where a near-white outline is invisible.
+              color: highlighted ? AppColors.brandNavy : const Color(0xFFBFC7D2),
+              width: 1.2,
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: highlighted
-                    ? AppColors.white.withOpacity(0.14)
-                    : AppColors.brandYellow.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: highlighted
+                      ? AppColors.white.withOpacity(0.14)
+                      : AppColors.brandYellow.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: highlighted ? AppColors.white : AppColors.brandNavy,
+                ),
               ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: highlighted ? AppColors.white : AppColors.brandNavy,
+              const SizedBox(height: 12),
+              CustomText(
+                title,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w800,
+                color: fg,
               ),
-            ),
-            const SizedBox(height: 12),
-            CustomText(
-              title,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
-              color: fg,
-            ),
-            const SizedBox(height: 2),
-            CustomText(
-              subtitle,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-              color: sub,
-            ),
-          ],
+              const SizedBox(height: 2),
+              CustomText(
+                subtitle,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+                color: sub,
+              ),
+            ],
+          ),
         ),
       ),
     );

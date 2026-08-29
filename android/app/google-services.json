@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "536168097143",
+    "project_id": "tommesalg-buyer",
+    "storage_bucket": "tommesalg-buyer.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:536168097143:android:ee54c501e21f59ec092d72",
+        "android_client_info": {
+          "package_name": "com.tommesalg.buyer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQ05OrSmQe_lwzI9oxOPqPHwZ3cRVjJMU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:536168097143:android:7487c017a0bbb1b5092d72",
+        "android_client_info": {
+          "package_name": "com.tommesalg.seller"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQ05OrSmQe_lwzI9oxOPqPHwZ3cRVjJMU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

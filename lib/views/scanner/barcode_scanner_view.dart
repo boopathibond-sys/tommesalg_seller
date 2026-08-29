@@ -4,6 +4,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
+import '../../core/localization/translation_keys.dart';
+import 'package:get/get.dart';
 
 /// Full-screen barcode scanner. Drives a live camera feed via mobile_scanner,
 /// stops on the first valid detection, and slides the result up from the
@@ -44,7 +46,7 @@ class _BarcodeScannerViewState extends State<BarcodeScannerView> {
       resultToStore = Barcode(
         format: first.format,
         rawValue: rawValue.substring(3),
-        rawBytes: first.rawBytes,
+        rawDecodedBytes: first.rawDecodedBytes,
         displayValue: first.displayValue,
       );
     }
@@ -80,7 +82,7 @@ class _BarcodeScannerViewState extends State<BarcodeScannerView> {
                 Barcode(
                   format: _result!.format,
                   rawValue: code,
-                  rawBytes: _result!.rawBytes,
+                  rawDecodedBytes: _result!.rawDecodedBytes,
                   displayValue: _result!.displayValue,
                 ),
               ),
@@ -126,8 +128,8 @@ class _TopBar extends StatelessWidget {
               onTap: () => Navigator.of(context).pop(),
             ),
             const Spacer(),
-            const CustomText(
-              'Scan barcode',
+            CustomText(
+              TKeys.scScanBarcode.tr,
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: Colors.white,
@@ -200,9 +202,9 @@ class _ScannerOverlay extends StatelessWidget {
                 left: 0,
                 right: 0,
                 bottom: c.maxHeight / 2 - side / 2 - 44,
-                child: const Center(
+                child: Center(
                   child: CustomText(
-                    'Hold strekkoden i ruten',
+                    TKeys.scHoldInFrame.tr,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
@@ -343,8 +345,8 @@ class _ResultCardState extends State<_ResultCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const CustomText(
-                        'Strekkode funnet',
+                      CustomText(
+                        TKeys.scBarcodeFound.tr,
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
@@ -362,8 +364,8 @@ class _ResultCardState extends State<_ResultCard> {
               ],
             ),
             const SizedBox(height: 18),
-            const CustomText(
-              'KODE',
+            CustomText(
+              TKeys.scCodeCaps.tr,
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.4,
@@ -382,7 +384,7 @@ class _ResultCardState extends State<_ResultCard> {
               ),
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'Skriv inn kode',
+                hintText: TKeys.scEnterCode.tr,
                 filled: true,
                 fillColor: AppColors.inputFill,
                 contentPadding:
@@ -417,8 +419,8 @@ class _ResultCardState extends State<_ResultCard> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const CustomText(
-                      'Skann igjen',
+                    child: CustomText(
+                      TKeys.scScanAgain.tr,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: AppColors.brandNavy,
@@ -441,8 +443,8 @@ class _ResultCardState extends State<_ResultCard> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const CustomText(
-                      'Ferdig',
+                    child: CustomText(
+                      TKeys.scDone.tr,
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                       color: AppColors.brandNavy,
@@ -459,7 +461,7 @@ class _ResultCardState extends State<_ResultCard> {
 
   String _formatLabel(BarcodeFormat f) {
     switch (f) {
-      case BarcodeFormat.qrCode:    return 'QR-kode';
+      case BarcodeFormat.qrCode:    return TKeys.scQrCode.tr;
       case BarcodeFormat.ean13:     return 'EAN-13';
       case BarcodeFormat.ean8:      return 'EAN-8';
       case BarcodeFormat.upcA:      return 'UPC-A';
@@ -468,11 +470,11 @@ class _ResultCardState extends State<_ResultCard> {
       case BarcodeFormat.code39:    return 'Code 39';
       case BarcodeFormat.code93:    return 'Code 93';
       case BarcodeFormat.codabar:   return 'Codabar';
-      case BarcodeFormat.itf:       return 'ITF';
+      case BarcodeFormat.itf14:     return 'ITF';
       case BarcodeFormat.dataMatrix: return 'Data Matrix';
       case BarcodeFormat.aztec:     return 'Aztec';
       case BarcodeFormat.pdf417:    return 'PDF417';
-      default:                      return 'Strekkode';
+      default:                      return TKeys.scBarcode.tr;
     }
   }
 }

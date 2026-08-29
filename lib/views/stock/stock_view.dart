@@ -5,6 +5,7 @@ import '../../controllers/inventory_controller.dart';
 import '../../controllers/stock_nav_controller.dart';
 import '../../core/config/get_or_put.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/branded_refresh_indicator.dart';
 import '../../core/widgets/custom_text.dart';
 import 'assign/assign_section.dart';
 import 'overview/overview_section.dart';
@@ -12,6 +13,7 @@ import 'search/search_section.dart';
 import 'shared/stock_segment.dart';
 import 'skus/skus_section.dart';
 import 'widgets/new_sku_dialog.dart';
+import '../../core/localization/translation_keys.dart';
 
 /// Warehouse / Stock tab.
 ///
@@ -97,9 +99,8 @@ class _StockViewState extends State<StockView> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
+    return BrandedRefreshIndicator(
       onRefresh: _onRefresh,
-      color: AppColors.brandNavy,
       child: SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(
         parent: BouncingScrollPhysics(),
@@ -108,22 +109,21 @@ class _StockViewState extends State<StockView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Header ───────────────────────────────────────────────────────
-          const Padding(
-            padding: EdgeInsets.fromLTRB(18, 14, 18, 0),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CustomText(
-                  'Warehouse',
+                  TKeys.stWarehouse.tr,
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.6,
                   color: AppColors.textPrimary,
                 ),
-                SizedBox(height: 6),
+                const SizedBox(height: 6),
                 CustomText(
-                  'Manage SKUs, assign products, and track activity '
-                  'for your assigned catalog.',
+                  TKeys.stWarehouseSub.tr,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   height: 1.45,

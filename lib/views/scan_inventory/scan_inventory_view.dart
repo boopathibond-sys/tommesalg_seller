@@ -4,6 +4,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
 import '../scanner/barcode_scanner_view.dart';
+import '../../core/localization/translation_keys.dart';
+import 'package:get/get.dart';
 
 /// A scanned line item: the detected [barcode] plus how many times that same
 /// code has been scanned. Quantity starts at 1 and bumps each time the same
@@ -97,14 +99,14 @@ class _ScanInventoryViewState extends State<ScanInventoryView> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
         ),
-        title: const CustomText(
-          'Delete item?',
+        title: CustomText(
+          TKeys.siDeleteItemTitle.tr,
           fontSize: 17,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
         ),
         content: CustomText(
-          'Do you want to delete "${item.code}" from the list?',
+          TKeys.siDeleteItemBody.trParams({'code': item.code}),
           fontSize: 13.5,
           fontWeight: FontWeight.w500,
           height: 1.45,
@@ -113,8 +115,8 @@ class _ScanInventoryViewState extends State<ScanInventoryView> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const CustomText(
-              'Cancel',
+            child: CustomText(
+              TKeys.cancelAction.tr,
               fontSize: 14,
               fontWeight: FontWeight.w700,
               color: AppColors.textSecondary,
@@ -122,8 +124,8 @@ class _ScanInventoryViewState extends State<ScanInventoryView> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const CustomText(
-              'Delete',
+            child: CustomText(
+              TKeys.deleteAction2.tr,
               fontSize: 14,
               fontWeight: FontWeight.w800,
               color: AppColors.vipps,
@@ -147,8 +149,8 @@ class _ScanInventoryViewState extends State<ScanInventoryView> {
         backgroundColor: AppColors.white,
         elevation: 0,
         foregroundColor: AppColors.brandNavy,
-        title: const CustomText(
-          'Scan inventory',
+        title: CustomText(
+          TKeys.siScanInventory.tr,
           fontSize: 18,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
@@ -188,8 +190,8 @@ class _ScanInventoryViewState extends State<ScanInventoryView> {
         backgroundColor: AppColors.brandNavy,
         foregroundColor: AppColors.white,
         icon: const Icon(Icons.qr_code_scanner_rounded),
-        label: const CustomText(
-          'Scan barcode',
+        label: CustomText(
+          TKeys.scScanBarcode.tr,
           fontSize: 14,
           fontWeight: FontWeight.w800,
           color: AppColors.white,
@@ -223,7 +225,9 @@ class _SummaryBar extends StatelessWidget {
               size: 18, color: AppColors.brandNavy),
           const SizedBox(width: 10),
           CustomText(
-            '$lines item${lines == 1 ? '' : 's'}  •  $units unit${units == 1 ? '' : 's'}',
+            '${(lines == 1 ? TKeys.siItemCount : TKeys.siItemCountMany).trParams({'count': '$lines'})}'
+            '  •  '
+            '${(units == 1 ? TKeys.siUnitCount : TKeys.siUnitCountMany).trParams({'count': '$units'})}',
             fontSize: 13,
             fontWeight: FontWeight.w700,
             color: AppColors.brandNavy,
@@ -349,13 +353,13 @@ class _DeleteBackground extends StatelessWidget {
         color: AppColors.vipps.withOpacity(0.12),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.delete_outline_rounded, color: AppColors.vipps, size: 22),
-          SizedBox(width: 6),
+          const Icon(Icons.delete_outline_rounded, color: AppColors.vipps, size: 22),
+          const SizedBox(width: 6),
           CustomText(
-            'Delete',
+            TKeys.deleteAction2.tr,
             fontSize: 14,
             fontWeight: FontWeight.w800,
             color: AppColors.vipps,
@@ -391,16 +395,15 @@ class _EmptyState extends StatelessWidget {
                   size: 32, color: AppColors.brandNavy),
             ),
             const SizedBox(height: 16),
-            const CustomText(
-              'No items scanned yet',
+            CustomText(
+              TKeys.siNoItemsScanned.tr,
               fontSize: 17,
               fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
             ),
             const SizedBox(height: 6),
-            const CustomText(
-              'Tap "Scan barcode" to start building your list. '
-              'Scanning the same code again adds to its quantity.',
+            CustomText(
+              TKeys.siTapScanBarcode.tr,
               fontSize: 13,
               fontWeight: FontWeight.w500,
               textAlign: TextAlign.center,
@@ -416,7 +419,7 @@ class _EmptyState extends StatelessWidget {
 
 String _formatLabel(BarcodeFormat f) {
   switch (f) {
-    case BarcodeFormat.qrCode:     return 'QR-kode';
+    case BarcodeFormat.qrCode:     return TKeys.scQrCode.tr;
     case BarcodeFormat.ean13:      return 'EAN-13';
     case BarcodeFormat.ean8:       return 'EAN-8';
     case BarcodeFormat.upcA:       return 'UPC-A';
@@ -425,10 +428,10 @@ String _formatLabel(BarcodeFormat f) {
     case BarcodeFormat.code39:     return 'Code 39';
     case BarcodeFormat.code93:     return 'Code 93';
     case BarcodeFormat.codabar:    return 'Codabar';
-    case BarcodeFormat.itf:        return 'ITF';
+    case BarcodeFormat.itf14:      return 'ITF';
     case BarcodeFormat.dataMatrix: return 'Data Matrix';
     case BarcodeFormat.aztec:      return 'Aztec';
     case BarcodeFormat.pdf417:     return 'PDF417';
-    default:                       return 'Strekkode';
+    default:                       return TKeys.scBarcode.tr;
   }
 }

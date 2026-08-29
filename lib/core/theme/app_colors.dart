@@ -18,7 +18,7 @@ class AppColors {
   static const Color brandNavy   = Color(0xFF0A1420);
 
   // ── Surfaces ─────────────────────────────────────────────────────────────
-  static const Color background      = brandYellow;          // page bg
+  static const Color background      = Color(0xFFFFFFFF);    // page bg — white
   static const Color backgroundSoft  = Color(0xFFFFD84D);    // gradient stop, deeper yellow
   static const Color card            = Color(0xFFFFFFFF);    // white card on yellow
   // Single source of truth for every text-field fill (AuthTextField,
@@ -27,6 +27,9 @@ class AppColors {
   // brand yellow + navy can be reserved for highlights.
   static const Color inputFill       = Color(0xFFF2F3F5);    // light grey input fill
   static const Color inputBorder     = Color(0xFFE6CC85);    // muted amber border
+  // Neutral hairline for card outlines and dividers, where the amber
+  // `inputBorder` reads as a highlight rather than as structure.
+  static const Color borderGrey      = Color(0xFFE4E7EC);    // neutral grey border
   static const Color toggleTrack     = Color(0xFFFFEFA0);    // toggle / track surface
 
   // ── Brand / CTA gradient ─────────────────────────────────────────────────
@@ -48,6 +51,13 @@ class AppColors {
   //     errors and the logout button, where a warm red still reads
   //     correctly on yellow + white surfaces.
   static const Color vipps           = Color(0xFFFF5B24);
+
+  // ── Safe / primary action ────────────────────────────────────────────────
+  // The filled "keep me here" button in confirmation dialogs ("Stay",
+  // "Stay signed in"). Blue reads as calm/safe next to the warm `vipps`
+  // destructive colour, and stays legible as white-on-blue.
+  static const Color primaryBlue     = Color(0xFF1E63E9);
+  static const Color primaryBlueDark = Color(0xFF1348B8);      // shadow tint
 
   // ── Text ─────────────────────────────────────────────────────────────────
   static const Color textPrimary     = brandNavy;            // headlines, body

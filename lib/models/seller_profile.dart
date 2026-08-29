@@ -166,15 +166,21 @@ class SocialLinks {
   static String? _orNull(String? v) =>
       (v == null || v.trim().isEmpty) ? null : v.trim();
 
+  /// Only the links that actually carry a value — a stored empty string would
+  /// otherwise render as a blank, untappable tile on the profile.
   List<MapEntry<String, String>> get activeLinks {
-    final all = <MapEntry<String, String>>[
-      if (website != null) MapEntry('Website', website!),
-      if (instagram != null) MapEntry('Instagram', instagram!),
-      if (facebook != null) MapEntry('Facebook', facebook!),
-      if (youtube != null) MapEntry('YouTube', youtube!),
-      if (linkedin != null) MapEntry('LinkedIn', linkedin!),
-      if (tiktok != null) MapEntry('TikTok', tiktok!),
-    ];
-    return all;
+    MapEntry<String, String>? entry(String label, String? value) {
+      final v = _orNull(value);
+      return v == null ? null : MapEntry(label, v);
+    }
+
+    return <MapEntry<String, String>?>[
+      entry('Website', website),
+      entry('Instagram', instagram),
+      entry('Facebook', facebook),
+      entry('YouTube', youtube),
+      entry('LinkedIn', linkedin),
+      entry('TikTok', tiktok),
+    ].whereType<MapEntry<String, String>>().toList();
   }
 }

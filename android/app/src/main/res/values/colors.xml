@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ic_launcher_background">#000000</color>
+    <!-- Tint Android applies to the notification's small icon + app name.
+         Brand yellow (AppColors.brandYellow) so pushes read as ours. -->
+    <color name="notification_accent">#FFD84D</color>
 </resources>

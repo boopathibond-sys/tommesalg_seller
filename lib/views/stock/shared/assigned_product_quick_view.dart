@@ -9,6 +9,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../models/inventory_placement.dart';
 import '../../../models/product_request_model.dart';
+import '../../measurements/measurement_goals_section.dart';
+import '../../../core/localization/translation_keys.dart';
 
 /// Quick-insert discrepancy presets for the report field.
 enum _DiscrepancyTag { size, color, picture, other }
@@ -169,14 +171,14 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
             ListTile(
               leading: const Icon(Icons.photo_camera_rounded,
                   color: AppColors.brandNavy),
-              title: const CustomText('Camera',
+              title: CustomText(TKeys.cameraSource.tr,
                   fontSize: 15, fontWeight: FontWeight.w700),
               onTap: () => Navigator.of(sheetCtx).pop(ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_rounded,
                   color: AppColors.brandNavy),
-              title: const CustomText('Gallery',
+              title: CustomText(TKeys.gallerySource.tr,
                   fontSize: 15, fontWeight: FontWeight.w700),
               onTap: () => Navigator.of(sheetCtx).pop(ImageSource.gallery),
             ),
@@ -198,8 +200,8 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
 
     if (rejected > 0) {
       Get.snackbar(
-        'Unsupported file',
-        'Only JPEG, PNG, or WebP images are allowed.',
+        TKeys.unsupportedFile.tr,
+        TKeys.onlyImageTypes.tr,
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.red.shade600,
         colorText: Colors.white,
@@ -225,13 +227,13 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
   String _presetFor(_DiscrepancyTag tag) {
     switch (tag) {
       case _DiscrepancyTag.size:
-        return 'Size';
+        return TKeys.sizeLabel.tr;
       case _DiscrepancyTag.color:
-        return 'Color';
+        return TKeys.colorLabel.tr;
       case _DiscrepancyTag.picture:
-        return 'Picture';
+        return TKeys.pictureLabel.tr;
       case _DiscrepancyTag.other:
-        return 'Other';
+        return TKeys.otherLabel.tr;
     }
   }
 
@@ -255,7 +257,7 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
 
     final message = _reportCtrl.text.trim();
     if (message.isEmpty) {
-      Get.snackbar('Error', 'Please describe the discrepancy');
+      Get.snackbar(TKeys.errorTitle.tr, TKeys.describeDiscrepancyError.tr);
       return;
     }
 
@@ -269,8 +271,8 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
         if (!mounted) return;
         setState(() => _submitting = false);
         Get.snackbar(
-          'Error',
-          'Could not upload ${img.name}',
+          TKeys.errorTitle.tr,
+          TKeys.stCouldNotUploadNamed.trParams({'name': img.name}),
           snackPosition: SnackPosition.BOTTOM,
           backgroundColor: Colors.red.shade600,
           colorText: Colors.white,
@@ -293,15 +295,15 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
     if (error == null) {
       Navigator.of(context).pop();
       Get.snackbar(
-        'Success',
-        'Report updated',
+        TKeys.successTitle.tr,
+        TKeys.reportUpdated.tr,
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.green.shade600,
         colorText: Colors.white,
       );
     } else {
       Get.snackbar(
-        'Error',
+        TKeys.errorTitle.tr,
         error,
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.red.shade600,
@@ -322,7 +324,7 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
   String get _productName {
     final n = _product?.name;
     if (n != null && n.isNotEmpty) return n;
-    return _p.productName.isNotEmpty ? _p.productName : 'Product';
+    return _p.productName.isNotEmpty ? _p.productName : TKeys.saProduct.tr;
   }
 
   String get _brand => _product?.brand ?? '';
@@ -330,7 +332,7 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
   String get _suggestedPrice =>
       _product?.originalPrice != null ? '${_product!.originalPrice} NOK' : '-';
   String get _regularPrice =>
-      _product?.regularPrice != null ? '${_product!.regularPrice} \$' : '-';
+      _product?.regularPrice != null ? '${_product!.regularPrice} NOK' : '-';
   String get _color =>
       _product?.colour ??
       ((_product?.colorsAvailable.isNotEmpty ?? false)
@@ -342,7 +344,7 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
   String get _description =>
       (_product?.shortDescription?.trim().isNotEmpty ?? false)
           ? _product!.shortDescription!
-          : 'No description';
+          : TKeys.noDescription.tr;
 
   @override
   Widget build(BuildContext context) {
@@ -372,28 +374,28 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
                     const SizedBox(height: 14),
                     _buildPriceRow(),
                     const SizedBox(height: 14),
-                    _buildSpecLine('UPC:', _upc),
+                    _buildSpecLine(TKeys.stUpcColon.tr, _upc),
                     const SizedBox(height: 6),
-                    _buildSpecLine('Quantity:', '${_p.quantity}'),
+                    _buildSpecLine(TKeys.stQuantityColon.tr, '${_p.quantity}'),
                     const SizedBox(height: 6),
-                    _buildSpecLine('Color:', _color),
+                    _buildSpecLine(TKeys.colorColon.tr, _color),
                     const SizedBox(height: 6),
-                    _buildSpecLine('Sizes:', _sizes),
+                    _buildSpecLine(TKeys.sizesColon.tr, _sizes),
                     const SizedBox(height: 12),
                     if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Row(
                           children: [
-                            SizedBox(
+                            const SizedBox(
                               width: 16,
                               height: 16,
                               child:
                                   CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            SizedBox(width: 10),
+                            const SizedBox(width: 10),
                             CustomText(
-                              'Loading details…',
+                              TKeys.stLoadingDetails.tr,
                               fontSize: 12.5,
                               color: AppColors.textMuted,
                             ),
@@ -408,16 +410,26 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
                         color: AppColors.textMuted,
                       ),
 
+                    // ── Measurements ──────────────────────────────────────
+                    const SizedBox(height: 18),
+                    const Divider(height: 1, color: AppColors.inputBorder),
+                    const SizedBox(height: 18),
+                    // Obx so the subtitle picks up the SKU code once the
+                    // detail request resolves.
+                    Obx(() => MeasurementGoalsSection(
+                          productId: _p.productId,
+                          placementId: _p.placementId,
+                          skuCode: widget.ctrl.detail?.code,
+                        )),
+
                     // ── Report a discrepancy ──────────────────────────────
                     const SizedBox(height: 18),
                     const Divider(height: 1, color: AppColors.inputBorder),
                     const SizedBox(height: 18),
-                    _buildSectionLabel('REPORT A DISCREPANCY'),
+                    _buildSectionLabel(TKeys.reportDiscrepancyCaps.tr),
                     const SizedBox(height: 8),
-                    const CustomText(
-                      'Does the catalog data not match the physical product? '
-                      'Describe the discrepancy and upload images if the product '
-                      'image is incorrect — admin sees this upon request.',
+                    CustomText(
+                      TKeys.reportDiscrepancyBody.tr,
                       fontSize: 12.5,
                       height: 1.45,
                       color: AppColors.textSecondary,
@@ -440,11 +452,11 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
                       _buildTagChips(),
                     ],
                     const SizedBox(height: 22),
-                    _buildSectionLabel('WRONG PRODUCT IMAGE?'),
+                    _buildSectionLabel(TKeys.wrongProductImageCaps.tr),
                     const SizedBox(height: 6),
-                    const CustomText(
-                      'Upload one or more images of the physical product '
-                      '(max $_maxImages).',
+                    CustomText(
+                      TKeys.uploadPhysicalImages
+                          .trParams({'max': '$_maxImages'}),
                       fontSize: 12.5,
                       height: 1.45,
                       color: AppColors.textSecondary,
@@ -486,7 +498,7 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
       minLines: 3,
       style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
       decoration: InputDecoration(
-        hintText: 'Describe the discrepancy',
+        hintText: TKeys.describeDiscrepancy.tr,
         hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
         filled: true,
         fillColor: Colors.white,
@@ -624,8 +636,8 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
               ),
             ),
             icon: const Icon(Icons.upload_rounded, size: 18),
-            label: const CustomText(
-              'UPLOAD IMAGE(S)',
+            label: CustomText(
+              TKeys.uploadImagesCaps.tr,
               fontSize: 12,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.8,
@@ -634,7 +646,8 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
         ),
         const SizedBox(width: 12),
         CustomText(
-          '$_totalImages / $_maxImages image(s)',
+          TKeys.imageCount.trParams(
+              {'current': '$_totalImages', 'max': '$_maxImages'}),
           fontSize: 12,
           color: AppColors.textSecondary,
           fontWeight: FontWeight.w600,
@@ -666,8 +679,8 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               )
-            : const CustomText(
-                'Update report',
+            : CustomText(
+                TKeys.updateReport.tr,
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,
@@ -755,7 +768,7 @@ class _AssignedProductQuickViewState extends State<AssignedProductQuickView> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _priceColumn('Suggested retail price', _suggestedPrice)),
+        Expanded(child: _priceColumn(TKeys.stSuggestedRetail.tr, _suggestedPrice)),
         Expanded(child: _priceColumn('MSRP', _regularPrice)),
       ],
     );

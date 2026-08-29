@@ -1,0 +1,4 @@
+/* English — the app's secondary language. */
+"NSCameraUsageDescription" = "Seller Squad needs camera access so you can scan barcodes and broadcast live video in the auction room.";
+"NSMicrophoneUsageDescription" = "Seller Squad needs microphone access so buyers can hear you during a live auction.";
+"NSPhotoLibraryUsageDescription" = "Seller Squad needs access to your photos so you can add product images to your listings.";
