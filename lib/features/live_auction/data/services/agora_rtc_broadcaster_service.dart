@@ -49,6 +49,7 @@ class AgoraRtcBroadcasterService {
     ) onConnectionStateChanged,
     required Future<void> Function() onTokenWillExpire,
     required void Function(String message) onError,
+    Future<void> Function(RtcEngine engine)? beforePreview,
   }) async {
     if (_engine != null) return;
 
@@ -62,6 +63,18 @@ class AgoraRtcBroadcasterService {
     await engine.enableVideo();
     // Seller is the broadcaster for this channel.
     await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+    // Last chance to configure the capture source before it starts: Agora's
+    // focal-length selection is a *capture* setting, so the lens the seller
+    // last chose has to be applied here to be live on the very first frame.
+    // Guarded, because a camera problem must never stop the broadcast from
+    // coming up — worst case the device's default lens is used.
+    if (beforePreview != null) {
+      try {
+        await beforePreview(engine);
+      } catch (e) {
+        dev.log('beforePreview hook failed: $e', name: _tag);
+      }
+    }
     await engine.startPreview();
 
     final handler = RtcEngineEventHandler(
@@ -148,6 +161,24 @@ class AgoraRtcBroadcasterService {
     final engine = _engine;
     if (engine == null) return;
     await engine.switchCamera();
+  }
+
+  /// Re-asserts that the camera track is published, after the local capture
+  /// source has been torn down and restarted for a lens change.
+  ///
+  /// Only the publish flags are sent: every other field stays null, so Agora
+  /// leaves the rest of the joined channel's options exactly as they were. A
+  /// no-op before Go Live, when there is no channel to update.
+  Future<void> ensureCameraPublishing() async {
+    final engine = _engine;
+    if (engine == null || !_joined) return;
+    try {
+      await engine.updateChannelMediaOptions(
+        const ChannelMediaOptions(publishCameraTrack: true),
+      );
+    } catch (e) {
+      dev.log('ensureCameraPublishing failed: $e', name: _tag);
+    }
   }
 
   /// Swaps in a freshly-issued RTC token without interrupting the broadcast.

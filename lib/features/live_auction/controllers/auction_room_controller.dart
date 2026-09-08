@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:math' hide log;
 
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
@@ -18,6 +19,7 @@ import '../data/models/pre_bid.dart';
 import '../data/models/seller_session.dart';
 import '../data/models/session_device.dart';
 import '../data/models/stream_order.dart';
+import '../data/models/seller_camera_option.dart';
 import '../data/services/agora_rtc_broadcaster_service.dart';
 import '../data/services/agora_rtm_service.dart';
 import '../data/services/agora_token_service.dart';
@@ -25,6 +27,8 @@ import '../data/services/auction_room_api.dart';
 import '../data/services/auction_ws_service.dart';
 import '../data/services/chat_moderation_api.dart';
 import '../data/services/display_name_service.dart';
+import '../data/services/seller_camera_service.dart';
+import '../data/services/seller_camera_storage.dart';
 import '../data/services/seller_session_service.dart';
 import '../views/widgets/control_request_dialog.dart';
 import '../../../core/localization/translation_keys.dart';
@@ -54,6 +58,7 @@ class AuctionRoomController extends GetxController {
   // ── Services ───────────────────────────────────────────────────────────────
   final _tokenService = AgoraTokenService();
   final _rtc = AgoraRtcBroadcasterService();
+  final _camera = SellerCameraService();
   final _rtm = AgoraRtmService();
   final _sessionService = SellerSessionService();
   final _api = AuctionRoomApi();
@@ -105,6 +110,20 @@ class AuctionRoomController extends GetxController {
   final RxBool micMuted = false.obs;
   final RxBool cameraOff = false.obs;
   final RxInt audienceCount = 0.obs;
+
+  // ── Camera / lens selection ───────────────────────────────────────────────
+  // Built from what the handset actually reports, never a hard-coded lens list,
+  // so a phone with one rear camera shows two entries and an iPhone Pro shows
+  // five. Purely local media state: none of it touches auction, bid or queue
+  // state, and a camera failure here can never end a stream.
+  final RxList<SellerCameraOption> cameraOptions = <SellerCameraOption>[].obs;
+  final Rxn<SellerCameraOption> selectedCamera = Rxn<SellerCameraOption>();
+  final RxBool cameraSwitching = false.obs;
+
+  /// Set when a lens change failed, cleared on the next attempt. The selector
+  /// surfaces it as "the current camera is still active" — never as an error
+  /// that implies the broadcast is down.
+  final RxnString cameraError = RxnString();
 
   // "Stop Live" = mic + camera cut to buyers only. Since Agora's
   // muteLocal*Stream stops the outgoing tracks but leaves local capture /
@@ -340,6 +359,7 @@ class AuctionRoomController extends GetxController {
         onConnectionStateChanged: (_, __) {},
         onTokenWillExpire: _renewRtcToken,
         onError: (msg) => log('RTC error: $msg'),
+        beforePreview: _initCameraSelection,
       );
       // initialize() has already started the local *preview* (seller sees
       // themselves). We deliberately do NOT join the channel here — not even
@@ -404,7 +424,94 @@ class AuctionRoomController extends GetxController {
     cameraOff.value = next;
   }
 
-  Future<void> switchCamera() => _rtc.switchCamera();
+  /// The Flip control. Jumps to the opposite-facing lens through the same
+  /// selection path as the picker, so the two never disagree about which
+  /// camera is live; falls back to Agora's plain flip when we have no
+  /// capability list to reason about.
+  Future<void> switchCamera() async {
+    final current = selectedCamera.value;
+    final options = cameraOptions;
+    if (current == null || options.isEmpty) {
+      await _rtc.switchCamera();
+      return;
+    }
+    final wantFront = current.mode != SellerCameraMode.front;
+    for (final option in options) {
+      if ((option.mode == SellerCameraMode.front) == wantFront) {
+        await selectCamera(option);
+        return;
+      }
+    }
+    // Only one facing available on this device — nothing to flip to.
+    await _rtc.switchCamera();
+  }
+
+  // ── Camera / lens selection ──────────────────────────────────────────────
+
+  /// Runs between engine init and the first camera frame: discover the lenses,
+  /// resolve the seller's saved preference against them, and configure capture
+  /// before it starts.
+  ///
+  /// Every step is best-effort. If the query fails, or the stored lens no
+  /// longer exists on this handset, the stream still comes up on the device
+  /// default — startup must never hinge on an optional lens.
+  Future<void> _initCameraSelection(RtcEngine engine) async {
+    _camera.attach(engine);
+    final options = await _camera.queryOptions();
+    cameraOptions.assignAll(options);
+    if (options.isEmpty) return;
+    final saved = await SellerCameraStorage.readMode(streamId);
+    final resolved = SellerCameraService.resolvePreferred(saved, options);
+    if (resolved == null) return;
+    if (await _camera.applyConfiguration(resolved)) {
+      selectedCamera.value = resolved;
+    }
+  }
+
+  /// Switches the seller to [option] mid-stream.
+  ///
+  /// The Agora channel is kept: only local capture is reconfigured, so the
+  /// seller stays in the same room, buyers keep receiving the feed, and the
+  /// auction, its timer and its bids are untouched. Repeat taps while a switch
+  /// is in flight are dropped, and a failure leaves the previous lens running.
+  Future<void> selectCamera(SellerCameraOption option) async {
+    if (cameraSwitching.value) return;
+    if (selectedCamera.value?.mode == option.mode) return;
+    cameraSwitching.value = true;
+    cameraError.value = null;
+    try {
+      final ok = await _camera.switchTo(option);
+      if (!ok) {
+        cameraError.value = TKeys.csSwitchFailed.tr;
+        return;
+      }
+      selectedCamera.value = option;
+      // Capture was torn down and rebuilt; make sure the channel still counts
+      // the camera as published before trusting that buyers can see it.
+      await _rtc.ensureCameraPublishing();
+      // The rail's manual mute states survive a capture restart on the SDK
+      // side, but re-assert them so a restart can never silently un-hide a
+      // seller who had the camera off or the broadcast stopped.
+      if (cameraOff.value || broadcastPaused.value) {
+        await _rtc.setCameraOff(true);
+      }
+      await SellerCameraStorage.writeMode(streamId, option.mode);
+    } finally {
+      cameraSwitching.value = false;
+    }
+  }
+
+  /// Re-runs capability discovery — for a seller who plugged in / unlocked a
+  /// lens, or simply to retry after a failed query.
+  Future<void> refreshCameraCapabilities() async {
+    final options = await _camera.queryOptions();
+    cameraOptions.assignAll(options);
+    final current = selectedCamera.value;
+    if (current != null && !options.any((o) => o.mode == current.mode)) {
+      selectedCamera.value =
+          options.isEmpty ? null : SellerCameraService.selectDefault(options);
+    }
+  }
 
   /// Stops / resumes broadcasting to buyers in one tap ("Stop Live" / "Go
   /// Live"). Stopping cuts the outgoing camera + mic so buyers stop seeing and
@@ -2043,6 +2150,7 @@ class AuctionRoomController extends GetxController {
     unawaited(_releaseSession());
     _ws?.dispose();
     unawaited(_rtm.dispose());
+    _camera.detach();
     unawaited(_rtc.release());
     super.onClose();
   }

@@ -1343,6 +1343,18 @@ abstract class TKeys {
   static const cdHoursAgo = 'cd_hours_ago';
   static const cdDaysAgo = 'cd_days_ago';
 
+  // ── Camera / lens selector ──
+  static const csFront = 'cs_front';
+  static const csBack = 'cs_back';
+  static const csWide = 'cs_wide';
+  static const csUltraWide = 'cs_ultra_wide';
+  static const csTelephoto = 'cs_telephoto';
+  static const csSwitching = 'cs_switching';
+  static const csSwitchFailed = 'cs_switch_failed';
+  static const csNoCameras = 'cs_no_cameras';
+  static const csDetecting = 'cs_detecting';
+  static const csDeviceDefault = 'cs_device_default';
+
   // ── Room sheets ──
   static const rsDevicesControl = 'rs_devices_control';
   static const rsMediaPush = 'rs_media_push';

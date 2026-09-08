@@ -7,6 +7,7 @@ import '../../controllers/auction_room_controller.dart';
 import '../../data/models/pre_bid.dart';
 import '../../data/models/session_device.dart';
 import '../media_push_view.dart';
+import 'camera_selector_sheet.dart';
 import '../../../../core/localization/translation_keys.dart';
 
 String _kr(num? v) => v == null ? '—' : 'kr ${v % 1 == 0 ? v.toInt() : v}';
@@ -44,6 +45,15 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
             onTap: () {
               Navigator.of(sctx).pop();
               showOrdersSheet(context, ctrl);
+            },
+          ),
+          _Tile(
+            icon: Icons.camera_alt_rounded,
+            label: TKeys.cameraSource.tr,
+            subtitle: _cameraSubtitle(ctrl),
+            onTap: () {
+              Navigator.of(sctx).pop();
+              showCameraSelectorSheet(context, ctrl);
             },
           ),
           _Tile(
@@ -95,6 +105,16 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
       ),
     ),
   );
+}
+
+/// Sub-line for the Camera tile — the lens currently capturing, so the seller
+/// can see what they are on without opening the picker.
+String _cameraSubtitle(AuctionRoomController ctrl) {
+  final selected = ctrl.selectedCamera.value;
+  if (selected != null) return selected.label;
+  return ctrl.cameraOptions.isEmpty
+      ? TKeys.csDetecting.tr
+      : TKeys.csDeviceDefault.tr;
 }
 
 /// Sub-line for the Media Push tile — what the seller can expect to do on the

@@ -364,6 +364,10 @@ class _VideoPreview extends StatelessWidget {
       final camOff = ctrl.cameraOff.value;
       final paused = ctrl.broadcastPaused.value;
       final goingLive = ctrl.goLiveLoading.value;
+      // The local capture source is torn down and rebuilt for a lens change,
+      // so the stage blanks for a moment. Cover it rather than showing the
+      // seller a frozen frame.
+      final switchingCamera = ctrl.cameraSwitching.value;
       if (!ctrl.rtc.isInitialized) {
         return _previewPlaceholder(TKeys.ltStartingCamera.tr);
       }
@@ -384,7 +388,7 @@ class _VideoPreview extends StatelessWidget {
           //  • stopped     → "buyers can't see you" (seller keeps preview);
           //  • not joined  → preview-only badge (covers scheduled AND an
           //    already-live stream we haven't started publishing to yet).
-          if (goingLive)
+          if (goingLive || switchingCamera)
             Container(
               color: Colors.black26,
               alignment: Alignment.center,
