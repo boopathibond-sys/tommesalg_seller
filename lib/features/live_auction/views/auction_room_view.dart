@@ -158,6 +158,10 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(
+          // `bottom: false` so [_RoomBottomNav] can paint its own surface all
+          // the way down to the screen edge and pad itself for the home
+          // indicator, instead of floating above a white gap.
+          bottom: false,
           child: Obx(() {
             if (ctrl.permissionDenied.value) {
               return _PermissionDenied(
@@ -185,7 +189,6 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
                   ctrl: ctrl,
                   onBack: _confirmLeaveAndClose,
                 ),
-                _TabBar(index: _tab, onChanged: (i) => setState(() => _tab = i)),
                 Expanded(
                   child: IndexedStack(
                     index: _tab,
@@ -196,6 +199,11 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
                       ChatTab(ctrl: ctrl),
                     ],
                   ),
+                ),
+                _RoomBottomNav(
+                  ctrl: ctrl,
+                  index: _tab,
+                  onChanged: (i) => setState(() => _tab = i),
                 ),
               ],
             );
@@ -325,8 +333,22 @@ String _fmtRemaining(Duration d) {
   return '$m:${(total % 60).toString().padLeft(2, '0')}';
 }
 
-class _TabBar extends StatelessWidget {
-  const _TabBar({required this.index, required this.onChanged});
+/// Full-bleed bottom navigation for the room's Live / Queue / Orders / Chat
+/// tabs.
+///
+/// It sits at the very bottom of the screen (the room's `SafeArea` opts out of
+/// the bottom inset so this bar paints its own surface behind the home
+/// indicator) and spans the full width. The Live tab is a full-bleed camera
+/// stage, and the floating segmented control this replaced read as one more
+/// overlay competing with the broadcast controls.
+class _RoomBottomNav extends StatelessWidget {
+  const _RoomBottomNav({
+    required this.ctrl,
+    required this.index,
+    required this.onChanged,
+  });
+
+  final AuctionRoomController ctrl;
   final int index;
   final ValueChanged<int> onChanged;
 
@@ -338,52 +360,138 @@ class _TabBar extends StatelessWidget {
         TKeys.ordersLabel.tr,
         TKeys.arTabChat.tr,
       ];
+  // Filled while selected, outlined while not — the usual bottom-nav cue.
   static const _icons = [
     Icons.videocam_rounded,
-    Icons.queue_rounded,
+    Icons.inventory_2_rounded,
     Icons.receipt_long_rounded,
+    Icons.chat_bubble_rounded,
+  ];
+  static const _iconsOutline = [
+    Icons.videocam_outlined,
+    Icons.inventory_2_outlined,
+    Icons.receipt_long_outlined,
     Icons.chat_bubble_outline_rounded,
   ];
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.inputBorder, width: 1),
-        ),
-        child: Row(
-          children: List.generate(_labels.length, (i) {
-            final selected = i == index;
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => onChanged(i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(vertical: 9),
+    // `padding`, not `viewPadding`: it collapses to 0 once the keyboard is up
+    // (Chat tab), so the bar sits flush on the keyboard instead of floating a
+    // home-indicator's worth of white above it.
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    return Container(
+      padding: EdgeInsets.only(top: 8, bottom: 6 + bottomInset),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        border: const Border(
+            top: BorderSide(color: AppColors.borderGrey, width: 1)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.brandNavy.withOpacity(0.06),
+            blurRadius: 18, offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      // Transparent Material so the items' ink splashes paint above this
+      // container's white fill instead of on the Scaffold beneath it.
+      child: Material(
+        type: MaterialType.transparency,
+        // One Obx around the whole row, reading both counts up front. Wrapping
+        // each item instead threw "improper use of a GetX": the Live and Chat
+        // items carry no badge, so their Obx touched no observable at all.
+        child: Obx(() {
+          // Counts the seller acts on: lots lined up, and orders the stream
+          // has produced so far.
+          final badges = [0, ctrl.queueView.length, ctrl.orders.length, 0];
+          return Row(
+            children: List.generate(_labels.length, (i) {
+              return Expanded(
+                child: _NavItem(
+                  label: _labels[i],
+                  icon: i == index ? _icons[i] : _iconsOutline[i],
+                  selected: i == index,
+                  badge: badges[i],
+                  onTap: () => onChanged(i),
+                ),
+              );
+            }),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+/// One bottom-nav destination: an icon in a pill that fills with brand navy
+/// when selected, its label beneath, and an optional count badge.
+class _NavItem extends StatelessWidget {
+  const _NavItem({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.badge,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final int badge;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  width: 52, height: 30,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: selected ? AppColors.brandNavy : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(15),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(_icons[i], size: 15,
-                          color: selected ? AppColors.brandYellow : AppColors.textMuted),
-                      const SizedBox(width: 6),
-                      CustomText(_labels[i], fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: selected ? AppColors.white : AppColors.textSecondary),
-                    ],
-                  ),
+                  child: Icon(icon, size: 19,
+                      color: selected
+                          ? AppColors.brandYellow
+                          : AppColors.textMuted),
                 ),
-              ),
-            );
-          }),
+                if (badge > 0)
+                  Positioned(
+                    top: -3, right: -2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                      constraints: const BoxConstraints(minWidth: 17),
+                      height: 17,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.vipps,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(color: AppColors.white, width: 1.5),
+                      ),
+                      child: CustomText(badge > 99 ? '99+' : '$badge',
+                          fontSize: 9, fontWeight: FontWeight.w800,
+                          color: AppColors.white),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            CustomText(label, fontSize: 11,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                color: selected ? AppColors.textPrimary : AppColors.textMuted),
+          ],
         ),
       ),
     );

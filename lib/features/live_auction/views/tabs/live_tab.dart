@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
@@ -15,12 +16,14 @@ import '../../../../core/localization/translation_keys.dart';
 
 /// The Live tab: a full-bleed camera stage with floating, minimisable overlays.
 ///
-/// Layout (TikTok-style):
+/// Layout:
 ///  • camera fills the whole tab, under everything;
-///  • a "Go Live" pill floats top-left (only while the stream is scheduled);
-///  • a vertical mic / camera / flip rail floats on the right;
-///  • the start-auction / running-auction card floats bottom-left;
-///  • a top-right toggle collapses every overlay down to just the camera.
+///  • a "Go Live" pill floats top-right, beside the minimise toggle;
+///  • the start-auction / running-auction card spans the full width above the
+///    dock, so a long lot title or a Dutch two-button row is no longer squeezed
+///    into the gap a side rail left behind;
+///  • a full-width frosted dock carries mic / camera / flip along the bottom;
+///  • the top-left toggle collapses every overlay down to just the camera.
 class LiveTab extends StatefulWidget {
   const LiveTab({super.key, required this.ctrl});
   final AuctionRoomController ctrl;
@@ -118,29 +121,11 @@ class _LiveTabState extends State<LiveTab> {
           ),
         ),
 
-        // ── Right vertical rail: mic / camera / flip (TikTok-style) ─────────
+        // ── Bottom: auction card + broadcast dock, both full width ─────────
         Positioned(
-          right: 14,
-          bottom: 20,
-          child: AnimatedSlide(
-            duration: anim,
-            offset: _minimized ? const Offset(1.4, 0) : Offset.zero,
-            child: AnimatedOpacity(
-              duration: anim,
-              opacity: _minimized ? 0 : 1,
-              child: IgnorePointer(
-                ignoring: _minimized,
-                child: _BroadcastControls(ctrl: ctrl),
-              ),
-            ),
-          ),
-        ),
-
-        // ── Bottom-left: start-auction / running-auction card ───────────────
-        Positioned(
-          left: 16,
-          right: 86,
-          bottom: 20,
+          left: 12,
+          right: 12,
+          bottom: 12,
           child: AnimatedSlide(
             duration: anim,
             offset: _minimized ? const Offset(0, 1.4) : Offset.zero,
@@ -149,32 +134,41 @@ class _LiveTabState extends State<LiveTab> {
               opacity: _minimized ? 0 : 1,
               child: IgnorePointer(
                 ignoring: _minimized,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: maxCardHeight),
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Obx(() {
-                          final active = ctrl.activeAuction;
-                          if (active != null) {
-                            return _ActiveAuctionCard(ctrl: ctrl, auction: active);
-                          }
-                          return _IdleCard(ctrl: ctrl);
-                        }),
-                        Obx(() {
-                          final result = ctrl.snap?.lastAuctionResult;
-                          if (result == null) return const SizedBox.shrink();
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: _LastResultCard(result: result),
-                          );
-                        }),
-                      ],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: maxCardHeight),
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Obx(() {
+                              final active = ctrl.activeAuction;
+                              if (active != null) {
+                                return _ActiveAuctionCard(
+                                    ctrl: ctrl, auction: active);
+                              }
+                              return _IdleCard(ctrl: ctrl);
+                            }),
+                            Obx(() {
+                              final result = ctrl.snap?.lastAuctionResult;
+                              if (result == null) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: _LastResultCard(result: result),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 10),
+                    _BroadcastDock(ctrl: ctrl),
+                  ],
                 ),
               ),
             ),
@@ -516,48 +510,165 @@ class _StoppedBadge extends StatelessWidget {
   }
 }
 
-/// Vertical mic / camera / flip rail (TikTok-style), floating over the camera.
-class _BroadcastControls extends StatelessWidget {
-  const _BroadcastControls({required this.ctrl});
+/// Full-width frosted dock carrying the broadcast controls (mic / camera /
+/// flip) along the bottom of the stage.
+///
+/// It replaced a vertical rail pinned to the right edge: that rail forced the
+/// auction card to stop ~86px short of the right margin, and put the three most
+/// used controls in the hardest corner to reach one-handed. Spread across the
+/// bottom the targets are wider, thumb-reachable, and the card gets the full
+/// width back.
+///
+/// The chevron at its right end collapses the whole dock down to a single grey
+/// handle in that same corner, giving the camera (and the auction card) the
+/// bottom strip back once the seller has settled mic and framing; tapping the
+/// handle brings the controls straight back.
+class _BroadcastDock extends StatefulWidget {
+  const _BroadcastDock({required this.ctrl});
   final AuctionRoomController ctrl;
 
   @override
+  State<_BroadcastDock> createState() => _BroadcastDockState();
+}
+
+class _BroadcastDockState extends State<_BroadcastDock> {
+  bool _collapsed = false;
+
+  void _toggle() => setState(() => _collapsed = !_collapsed);
+
+  @override
   Widget build(BuildContext context) {
-    return Obx(() => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _CircleControl(
-              icon: ctrl.micMuted.value ? Icons.mic_off_rounded : Icons.mic_rounded,
-              label: ctrl.micMuted.value ? TKeys.ltUnmute.tr : TKeys.ltMute.tr,
-              active: !ctrl.micMuted.value,
-              onTap: ctrl.toggleMic,
-            ),
-            const SizedBox(height: 18),
-            _CircleControl(
-              icon: ctrl.cameraOff.value
-                  ? Icons.videocam_off_rounded
-                  : Icons.videocam_rounded,
-              label: TKeys.cameraSource.tr,
-              active: !ctrl.cameraOff.value,
-              onTap: ctrl.toggleCamera,
-            ),
-            const SizedBox(height: 18),
-            _CircleControl(
-              icon: Icons.cameraswitch_rounded,
-              label: TKeys.ltFlip.tr,
-              active: true,
-              onTap: ctrl.switchCamera,
-            ),
-          ],
-        ));
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      // Both states live in the bottom-right corner, so the dock shrinks into
+      // (and grows back out of) the spot the chevron was tapped.
+      alignment: Alignment.bottomRight,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        child: _collapsed
+            ? _DockHandle(key: const ValueKey('collapsed'), onTap: _toggle)
+            : _expanded(),
+      ),
+    );
+  }
+
+  Widget _expanded() {
+    final ctrl = widget.ctrl;
+    return ClipRRect(
+      key: const ValueKey('expanded'),
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.38),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.14)),
+          ),
+          // Transparent Material so the controls' ink splashes paint above the
+          // frosted fill rather than on the Scaffold under the camera.
+          child: Material(
+            type: MaterialType.transparency,
+            child: Obx(() => Row(
+                  children: [
+                    Expanded(
+                      child: _DockControl(
+                        icon: ctrl.micMuted.value
+                            ? Icons.mic_off_rounded
+                            : Icons.mic_rounded,
+                        label: ctrl.micMuted.value
+                            ? TKeys.ltUnmute.tr
+                            : TKeys.ltMute.tr,
+                        active: !ctrl.micMuted.value,
+                        onTap: ctrl.toggleMic,
+                      ),
+                    ),
+                    Expanded(
+                      child: _DockControl(
+                        icon: ctrl.cameraOff.value
+                            ? Icons.videocam_off_rounded
+                            : Icons.videocam_rounded,
+                        label: TKeys.cameraSource.tr,
+                        active: !ctrl.cameraOff.value,
+                        onTap: ctrl.toggleCamera,
+                      ),
+                    ),
+                    Expanded(
+                      child: _DockControl(
+                        icon: Icons.cameraswitch_rounded,
+                        label: TKeys.ltFlip.tr,
+                        active: true,
+                        onTap: ctrl.switchCamera,
+                      ),
+                    ),
+                    // Hairline separator so the collapse chevron doesn't read
+                    // as a fourth broadcast control.
+                    Container(
+                      width: 1,
+                      height: 34,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      color: Colors.white.withOpacity(0.16),
+                    ),
+                    InkWell(
+                      onTap: _toggle,
+                      customBorder: const CircleBorder(),
+                      child: SizedBox(
+                        width: 40,
+                        height: 44,
+                        child: Icon(Icons.keyboard_arrow_down_rounded,
+                            size: 24, color: Colors.white.withOpacity(0.85)),
+                      ),
+                    ),
+                  ],
+                )),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-/// A floating, shadowed circular control with a caption beneath it.
-/// White = on; brand-red = off/muted. Elevation gives the shadow + hover,
-/// InkWell gives the tap ripple.
-class _CircleControl extends StatelessWidget {
-  const _CircleControl({
+/// The collapsed dock: a grey 50%-opacity handle parked in the bottom-right
+/// corner, just above the room's bottom navigation. Tapping it restores the
+/// mic / camera / flip controls.
+class _DockHandle extends StatelessWidget {
+  const _DockHandle({super.key, required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Material(
+        color: AppColors.grey.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            width: 54,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withOpacity(0.25)),
+            ),
+            child: const Icon(Icons.keyboard_arrow_up_rounded,
+                size: 24, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One dock control: a rounded icon tile with its caption beneath. The tile is
+/// translucent white while the input is on and solid brand-red once it is muted
+/// or switched off, so "something is off air" reads at a glance.
+class _DockControl extends StatelessWidget {
+  const _DockControl({
     required this.icon,
     required this.label,
     required this.active,
@@ -570,36 +681,39 @@ class _CircleControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Material(
-          color: active ? AppColors.white : AppColors.vipps,
-          shape: const CircleBorder(),
-          elevation: 6,
-          shadowColor: Colors.black.withOpacity(0.5),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onTap,
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Icon(icon, size: 18,
-                  color: active ? AppColors.brandNavy : AppColors.white),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 46, height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: active ? Colors.white.withOpacity(0.16) : AppColors.vipps,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 19, color: Colors.white),
             ),
-          ),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
