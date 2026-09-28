@@ -14,8 +14,11 @@ import '../../models/stream_model.dart';
 import '../../core/localization/translation_keys.dart';
 
 /// Full-page form to create — or edit — a stream. Mirrors the seller web
-/// "New stream" screen: title, description, 9:16 thumbnail, sizes, and a
+/// "New stream" screen: title, note, 9:16 thumbnail, sizes, and a
 /// start-now / schedule toggle.
+///
+/// The note field is the API's `description` — only the label the seller
+/// reads changed, so nothing about the request body moved.
 ///
 /// Pass [stream] to open in edit mode: the form prefills from that stream
 /// (topped up by `GET /api/v1/seller/streams/:id` for fields the list payload
@@ -349,7 +352,7 @@ class _CreateStreamViewState extends State<CreateStreamView> {
             hint: TKeys.csTitleHint.tr,
           ),
           const SizedBox(height: 18),
-          _FieldLabel(TKeys.fieldDescription.tr),
+          _FieldLabel(TKeys.csNote.tr),
           const SizedBox(height: 8),
           _TextField(
             controller: _descCtrl,

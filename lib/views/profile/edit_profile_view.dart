@@ -181,25 +181,34 @@ class _EditProfileViewState extends State<EditProfileView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _label(TKeys.epBasicInformation.tr),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
+              _fieldLabel(TKeys.epDisplayName.tr),
               AuthTextField(
                 controller: _displayName,
                 icon: Icons.person_outline_rounded,
                 hint: TKeys.epDisplayName.tr,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              _fieldLabel(TKeys.epBusinessName.tr),
               AuthTextField(
                 controller: _businessName,
                 icon: Icons.storefront_outlined,
                 hint: TKeys.epBusinessName.tr,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              _fieldLabel(TKeys.epUrlSlugLabel.tr),
               AuthTextField(
                 controller: _slug,
                 icon: Icons.link_rounded,
                 hint: TKeys.epPublicSlug.tr,
               ),
-              const SizedBox(height: 12),
+              // What an empty slug falls back to, and that it only takes
+              // effect on save — both easy to get wrong, and both invisible
+              // until the seller has already published the wrong link.
+              const SizedBox(height: 7),
+              _fieldNote(TKeys.epSlugNote.tr),
+              const SizedBox(height: 16),
+              _fieldLabel(TKeys.epAboutLabel.tr),
               _BioField(controller: _bio),
 
               const SizedBox(height: 28),
@@ -212,21 +221,8 @@ class _EditProfileViewState extends State<EditProfileView> {
                 color: AppColors.textMuted,
                 height: 1.4,
               ),
-              const SizedBox(height: 8),
-              _sectionToggle(TKeys.epHeader.tr, _sections.header,
-                  (v) => _sections = _sections.copyWith(header: v)),
-              _sectionToggle(TKeys.epStats.tr, _sections.stats,
-                  (v) => _sections = _sections.copyWith(stats: v)),
-              _sectionToggle(TKeys.productsLabel.tr, _sections.products,
-                  (v) => _sections = _sections.copyWith(products: v)),
-              _sectionToggle(TKeys.navStreams.tr, _sections.streams,
-                  (v) => _sections = _sections.copyWith(streams: v)),
-              _sectionToggle(TKeys.epBusinessInfo.tr, _sections.businessInfo,
-                  (v) => _sections = _sections.copyWith(businessInfo: v)),
-              _sectionToggle(TKeys.epAccountInfo.tr, _sections.accountInfo,
-                  (v) => _sections = _sections.copyWith(accountInfo: v)),
-              _sectionToggle(TKeys.socialLinksLabel.tr, _sections.socialLinks,
-                  (v) => _sections = _sections.copyWith(socialLinks: v)),
+              const SizedBox(height: 12),
+              _sectionsBox(),
 
               const SizedBox(height: 28),
               _label(TKeys.epSocialLinksTitle.tr),
@@ -308,6 +304,76 @@ class _EditProfileViewState extends State<EditProfileView> {
       fontWeight: FontWeight.w800,
       letterSpacing: 0.4,
       color: AppColors.textPrimary,
+    );
+  }
+
+  /// Standing caption above an input. Unlike a hint it survives typing — and
+  /// this form opens pre-filled from the saved profile, so the hints are
+  /// almost never on screen to name the field in the first place.
+  Widget _fieldLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: CustomText(
+        text,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textSecondary,
+      ),
+    );
+  }
+
+  /// Explanatory line under an input, for a field whose behaviour isn't
+  /// obvious from its label.
+  Widget _fieldNote(String text) {
+    return CustomText(
+      text,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      color: AppColors.textMuted,
+      height: 1.4,
+    );
+  }
+
+  /// The visibility toggles, boxed together on the same shell the inputs use.
+  ///
+  /// Grouping matters here: seven bare switches floating in the scroll read as
+  /// seven unrelated settings, while one bordered card reads as the single
+  /// question the heading above it asks — what the public profile shows.
+  /// Hairlines between the rows keep each toggle tied to its own label.
+  Widget _sectionsBox() {
+    final rows = <Widget>[
+      _sectionToggle(TKeys.epHeader.tr, _sections.header,
+          (v) => _sections = _sections.copyWith(header: v)),
+      _sectionToggle(TKeys.epStats.tr, _sections.stats,
+          (v) => _sections = _sections.copyWith(stats: v)),
+      _sectionToggle(TKeys.productsLabel.tr, _sections.products,
+          (v) => _sections = _sections.copyWith(products: v)),
+      _sectionToggle(TKeys.navStreams.tr, _sections.streams,
+          (v) => _sections = _sections.copyWith(streams: v)),
+      _sectionToggle(TKeys.epBusinessInfo.tr, _sections.businessInfo,
+          (v) => _sections = _sections.copyWith(businessInfo: v)),
+      _sectionToggle(TKeys.epAccountInfo.tr, _sections.accountInfo,
+          (v) => _sections = _sections.copyWith(accountInfo: v)),
+      _sectionToggle(TKeys.socialLinksLabel.tr, _sections.socialLinks,
+          (v) => _sections = _sections.copyWith(socialLinks: v)),
+    ];
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.inputFill,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.inputBorder, width: 1),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0)
+              const Divider(
+                  height: 1, thickness: 1, color: AppColors.inputBorder),
+            rows[i],
+          ],
+        ],
+      ),
     );
   }
 

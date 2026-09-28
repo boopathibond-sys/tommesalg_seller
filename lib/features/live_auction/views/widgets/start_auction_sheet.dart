@@ -38,7 +38,12 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
     final p = widget.nextProduct;
     if (p?.startingPrice != null) _startingPrice.text = '${p!.startingPrice}';
     if (p?.bidIncrement != null) _bidIncrement.text = '${p!.bidIncrement}';
-    final shipping = p?.shippingPriceNok;
+    // Zero (and anything negative) means "no shipping price configured", not a
+    // free lot: the API sends 0 for a product the seller never priced, and
+    // showing that as the selection would start the auction on a price nobody
+    // chose. Treated as absent, so the sheet falls back to the 99 kr tier.
+    final raw = p?.shippingPriceNok;
+    final shipping = raw != null && raw > 0 ? raw : null;
     _shippingOptions = shipping == null || _shippingTiers.contains(shipping)
         ? _shippingTiers
         : (<num>[..._shippingTiers, shipping]..sort());
@@ -80,7 +85,7 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
               child: Container(
                 width: 40, height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.inputBorder,
+                  color: AppColors.borderGrey,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -93,59 +98,75 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
               _ProductDetailsCard(product: widget.nextProduct!),
             ],
             const SizedBox(height: 18),
-            _Label(TKeys.sasAuctionType.tr),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _TypeChip(
-                  // Backend type stays 'NORMAL'; sellers see it as "Regular".
-                  label: TKeys.sasRegular.tr,
-                  selected: _type == 'NORMAL',
-                  onTap: () => setState(() => _type = 'NORMAL'),
+            _FieldBox(
+              label: TKeys.sasAuctionType.tr,
+              child: Row(
+                children: [
+                  _TypeChip(
+                    // Backend type stays 'NORMAL'; sellers see it as "Regular".
+                    label: TKeys.sasRegular.tr,
+                    selected: _type == 'NORMAL',
+                    onTap: () => setState(() => _type = 'NORMAL'),
+                  ),
+                  const SizedBox(width: 8),
+                  _TypeChip(
+                    label: TKeys.sasDutch.tr,
+                    selected: _type == 'DUTCH',
+                    onTap: () => setState(() => _type = 'DUTCH'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _FieldBox(
+              label: TKeys.sasDuration.tr,
+              // The seconds read as the field's value, so they sit on the
+              // label line where every other box shows what it holds.
+              trailing: CustomText('${_duration.round()}s',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.brandNavy),
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 3,
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 8),
+                  inactiveTrackColor: AppColors.borderGrey,
                 ),
-                const SizedBox(width: 10),
-                _TypeChip(
-                  label: TKeys.sasDutch.tr,
-                  selected: _type == 'DUTCH',
-                  onTap: () => setState(() => _type = 'DUTCH'),
+                child: Slider(
+                  value: _duration,
+                  min: 10,
+                  max: 60,
+                  divisions: 50,
+                  activeColor: AppColors.brandNavy,
+                  label: '${_duration.round()}s',
+                  onChanged: (v) => setState(() => _duration = v),
                 ),
-              ],
+              ),
             ),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _Label(TKeys.sasDuration.tr),
-                CustomText('${_duration.round()}s', fontSize: 14,
-                    fontWeight: FontWeight.w800, color: AppColors.brandNavy),
-              ],
+            const SizedBox(height: 12),
+            _FieldBox(
+              label: TKeys.sasStartingPriceOptional.tr,
+              child: _Field(controller: _startingPrice, number: true),
             ),
-            Slider(
-              value: _duration,
-              min: 10, max: 60, divisions: 50,
-              activeColor: AppColors.brandNavy,
-              label: '${_duration.round()}s',
-              onChanged: (v) => setState(() => _duration = v),
-            ),
-            const SizedBox(height: 6),
-            _Label(TKeys.sasStartingPriceOptional.tr),
-            const SizedBox(height: 6),
-            _Field(controller: _startingPrice, hint: 'kr', number: true),
-            const SizedBox(height: 14),
             if (_type == 'NORMAL') ...[
-              const _Label('Bid increment (optional)'),
-              const SizedBox(height: 6),
-              _Field(controller: _bidIncrement, hint: 'kr', number: true),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
+              _FieldBox(
+                label: TKeys.sasBidIncrementOptional.tr,
+                child: _Field(controller: _bidIncrement, number: true),
+              ),
             ],
-            const _Label('Shipping price'),
-            const SizedBox(height: 6),
-            _ShippingDropdown(
-              value: _shipping,
-              options: _shippingOptions,
-              onChanged: (v) => setState(() => _shipping = v),
+            const SizedBox(height: 12),
+            _FieldBox(
+              label: TKeys.fieldShippingPrice.tr,
+              child: _ShippingDropdown(
+                value: _shipping,
+                options: _shippingOptions,
+                onChanged: (v) => setState(() => _shipping = v),
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 22),
             GestureDetector(
               onTap: _confirm,
               child: Container(
@@ -159,7 +180,8 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.play_arrow_rounded, color: AppColors.brandYellow),
+                    const Icon(Icons.play_arrow_rounded,
+                        color: AppColors.brandYellow),
                     const SizedBox(width: 8),
                     CustomText(TKeys.sasStartAuction.tr, fontSize: 15,
                         fontWeight: FontWeight.w800, color: AppColors.white),
@@ -169,6 +191,54 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One form row: a white box with a hairline grey border, its label small and
+/// muted along the top and the value under it.
+///
+/// Every control in the sheet wears this — text fields, the type chips, the
+/// duration slider, the shipping picker — so the form reads as one column of
+/// identical cards rather than a stack of differently-shaped widgets.
+class _FieldBox extends StatelessWidget {
+  const _FieldBox({required this.label, required this.child, this.trailing});
+  final String label;
+  final Widget child;
+
+  /// Optional value shown on the label line, for controls whose value isn't
+  /// text the seller types (the duration slider).
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderGrey, width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: CustomText(label,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textMuted),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: 2),
+          child,
+        ],
       ),
     );
   }
@@ -187,9 +257,9 @@ class _ProductDetailsCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.brandNavy.withOpacity(0.04),
+        color: AppColors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.brandNavy, width: 1.3),
+        border: Border.all(color: AppColors.borderGrey, width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,14 +347,6 @@ String _price(num v) {
   return '$buf,$dec kr';
 }
 
-class _Label extends StatelessWidget {
-  const _Label(this.text);
-  final String text;
-  @override
-  Widget build(BuildContext context) => CustomText(text,
-      fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary);
-}
-
 class _TypeChip extends StatelessWidget {
   const _TypeChip({required this.label, required this.selected, required this.onTap});
   final String label;
@@ -296,17 +358,17 @@ class _TypeChip extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 9),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: selected ? AppColors.brandNavy : AppColors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: selected ? AppColors.brandNavy : AppColors.inputBorder,
+              color: selected ? AppColors.brandNavy : AppColors.borderGrey,
               width: 1.2,
             ),
           ),
-          child: CustomText(label, fontSize: 14, fontWeight: FontWeight.w700,
+          child: CustomText(label, fontSize: 13.5, fontWeight: FontWeight.w700,
               color: selected ? AppColors.white : AppColors.textSecondary),
         ),
       ),
@@ -328,31 +390,25 @@ class _ShippingDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF6F7F9),
+    // Bare, like [_Field]: the [_FieldBox] around it owns the border.
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<num>(
+        value: value,
+        isExpanded: true,
+        isDense: true,
+        padding: EdgeInsets.zero,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.grey.withOpacity(0.3)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<num>(
-          value: value,
-          isExpanded: true,
-          isDense: true,
-          borderRadius: BorderRadius.circular(12),
-          icon: const Icon(Icons.keyboard_arrow_down_rounded,
-              color: AppColors.textSecondary),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary),
-          items: [
-            for (final o in options)
-              DropdownMenuItem<num>(value: o, child: Text(_nok(o))),
-          ],
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
-        ),
+        icon: const Icon(Icons.keyboard_arrow_down_rounded,
+            color: AppColors.textSecondary),
+        style: const TextStyle(
+            fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+        items: [
+          for (final o in options)
+            DropdownMenuItem<num>(value: o, child: Text(_nok(o))),
+        ],
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
       ),
     );
   }
@@ -362,42 +418,35 @@ class _ShippingDropdown extends StatelessWidget {
 String _nok(num v) => '${v % 1 == 0 ? v.toInt() : v} NOK';
 
 class _Field extends StatelessWidget {
-  const _Field({
-    required this.controller,
-    required this.hint,
-    this.number = false,
-  });
+  const _Field({required this.controller, this.number = false});
   final TextEditingController controller;
-  final String hint;
   final bool number;
+
   @override
   Widget build(BuildContext context) {
+    // No border, fill or padding of its own — the [_FieldBox] around it draws
+    // the box, so the input is just the value line inside it.
     return TextField(
       controller: controller,
       keyboardType: number
           ? const TextInputType.numberWithOptions(decimal: true)
           : TextInputType.text,
       cursorColor: AppColors.brandNavy,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary),
-      decoration: InputDecoration(
-        hintText: hint,
+      style: const TextStyle(
+          fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+      decoration: const InputDecoration(
+        hintText: '0',
+        hintStyle: TextStyle(
+            fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textMuted),
+        // NOK, always — the seller never types the unit.
+        suffixText: 'kr',
+        suffixStyle: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
         isDense: true,
-        filled: true,
-        fillColor: const Color(0xFFF6F7F9),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.grey.withOpacity(0.3)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.grey.withOpacity(0.3)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.brandNavy, width: 1.4),
-        ),
+        contentPadding: EdgeInsets.zero,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
       ),
     );
   }

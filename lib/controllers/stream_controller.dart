@@ -996,6 +996,45 @@ class StreamListController extends GetxController {
     }
   }
 
+  /// Sets the product's shipping tier (79 / 99 / 129 / 169 / 249 NOK) via
+  /// `PUT /seller/products/{productId}/shipping`. The product must sit on a
+  /// product request for one of the seller's own streams.
+  ///
+  /// On success every loaded request item for that product is patched in
+  /// place, so reopening its quick view shows the saved tier without a refetch.
+  Future<bool> updateProductShipping({
+    required String productId,
+    required num shippingPriceNok,
+  }) async {
+    _errorMessage.value = null;
+    try {
+      final response = await _api.put(
+        '${EnvConfig.baseUrl}/api/v1/seller/products/$productId/shipping',
+        headers: AuthService.instance.authHeaders,
+        body: {'shippingPriceNok': shippingPriceNok},
+      );
+
+      if (!response.isSuccess) {
+        _errorMessage.value = _apiErrorMessage(response) ??
+            'Could not update shipping: ${response.statusCode}';
+        return false;
+      }
+
+      for (var i = 0; i < _productRequestItems.length; i++) {
+        final item = _productRequestItems[i];
+        if (item.productId != productId || item.product == null) continue;
+        _productRequestItems[i] = item.copyWith(
+          product: item.product!.copyWith(shippingPriceNok: shippingPriceNok),
+        );
+      }
+      return true;
+    } catch (e) {
+      log('Update product shipping error: $e');
+      _errorMessage.value = 'Network error. Please try again.';
+      return false;
+    }
+  }
+
   /// Adds a product that wasn't found in the catalog. Any selected images are
   /// uploaded first (reusing the issue-image upload) and their `s3Key`s are
   /// sent as `requestedImageUrls`.

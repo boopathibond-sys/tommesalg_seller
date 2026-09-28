@@ -464,154 +464,15 @@ class _ManageProductViewState extends State<ManageProductView>
                       fontWeight: FontWeight.w600,
                     ),
                     const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: AppColors.grey,
-                        ),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                      child: DropdownButton<StreamModel>(
-                        // Only ever hand the dropdown a value it actually
-                        // lists. StreamModel compares by identity, so a
-                        // selection left over from a previous load (or patched
-                        // into a new instance elsewhere) would otherwise trip
-                        // DropdownButton's "exactly one item with this value"
-                        // assertion and take the whole tab down. Falling back
-                        // to null just shows the "Select Stream" hint.
-                        value: ctrl.scheduledStreams
-                                .contains(ctrl.selectedStream.value)
-                            ? ctrl.selectedStream.value
-                            : null,
-                        isExpanded: true,
-                        borderRadius: BorderRadius.circular(14),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                        ),
-                        selectedItemBuilder: (context) {
-                          return ctrl.scheduledStreams.map((stream) {
-                            return Row(
-                              children: [
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: BoxDecoration(
-                                    color: stream.isLive
-                                        ? Colors.red
-                                        : stream.isScheduled
-                                            ? AppColors.brandYellow
-                                            : Colors.grey,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        stream.title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        formatDate(
-                                          stream.scheduledStartTime,
-                                        ),
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            );
-                          }).toList();
-                        },
-                        hint: Row(
-                          children: [
-                            const Icon(
-                              Icons.live_tv_rounded,
-                              color: AppColors.brandNavy,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              TKeys.selectStream.tr,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        items: ctrl.scheduledStreams.map((stream) {
-                          return DropdownMenuItem<StreamModel>(
-                            value: stream,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  margin: const EdgeInsets.only(top: 8),
-                                  decoration: BoxDecoration(
-                                    color: stream.isLive
-                                        ? Colors.red
-                                        : stream.isScheduled
-                                            ? AppColors.brandYellow
-                                            : Colors.grey,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        stream.title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        formatDate(
-                                          stream.scheduledStartTime,
-                                        ),
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          ctrl.selectStream(value);
-                        },
-                      ),
+                    _StreamPickerField(
+                      selected: ctrl.scheduledStreams
+                              .contains(ctrl.selectedStream.value)
+                          ? ctrl.selectedStream.value
+                          : null,
+                      streams: ctrl.scheduledStreams,
+                      formatDate: formatDate,
+                      onSelected: ctrl.selectStream,
                     ),
-                  ),
                   if (ctrl.selectedStream.value != null) ...[
                     const SizedBox(height: 18),
                     Align(
@@ -1372,6 +1233,16 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
   bool _loadingIssue = true;
   bool _submitting = false;
 
+  /// Fixed shipping tiers the backend accepts, in NOK; 99 is the standard.
+  static const List<num> _shippingTiers = <num>[79, 99, 129, 169, 249];
+  static const num _standardShipping = 99;
+
+  /// Tier last confirmed by the server, and the one currently picked in the
+  /// dropdown. Save is only enabled while they differ.
+  late num _savedShipping;
+  late num _shipping;
+  bool _savingShipping = false;
+
   ProductRequestItem get _item => widget.item;
   ProductRequestProduct? get _product => widget.item.product;
 
@@ -1402,10 +1273,59 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
 
   int get _totalImages => _existingImageUrls.length + _reportImages.length;
 
+  /// Shipping can only be set on a real catalog product — unknown-UPC items
+  /// have nothing for the endpoint to update.
+  bool get _canEditShipping =>
+      _item.productId.isNotEmpty && !_item.isUnknownUpc;
+
   @override
   void initState() {
     super.initState();
+    // Null / 0 means "never configured", which the backend treats as the
+    // standard tier. An off-tier legacy value also falls back to standard so
+    // the dropdown always has a matching item.
+    final raw = _product?.shippingPriceNok;
+    _savedShipping = raw != null && _shippingTiers.contains(raw)
+        ? raw
+        : _standardShipping;
+    _shipping = _savedShipping;
     _loadIssue();
+  }
+
+  Future<void> _saveShipping() async {
+    if (_savingShipping || _shipping == _savedShipping) return;
+    setState(() => _savingShipping = true);
+
+    final picked = _shipping;
+    final ok = await _ctrl.updateProductShipping(
+      productId: _item.productId,
+      shippingPriceNok: picked,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _savingShipping = false;
+      if (ok) _savedShipping = picked;
+    });
+
+    if (ok) {
+      Get.snackbar(
+        TKeys.shippingUpdated.tr,
+        TKeys.shippingUpdatedBody.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.green.shade600,
+        colorText: Colors.white,
+      );
+    } else {
+      Get.snackbar(
+        TKeys.errorTitle.tr,
+        _ctrl.errorMessage ?? TKeys.couldNotUpdateShipping.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 4),
+      );
+    }
   }
 
   Future<void> _loadIssue() async {
@@ -1643,6 +1563,25 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
                       color: AppColors.textMuted,
                     ),
 
+                    // ── Shipping ──────────────────────────────────────────
+                    if (_canEditShipping) ...[
+                      const SizedBox(height: 18),
+                      const Divider(height: 1, color: AppColors.inputBorder),
+                      const SizedBox(height: 18),
+                      _buildSectionLabel(TKeys.shippingCaps.tr),
+                      const SizedBox(height: 6),
+                      CustomText(
+                        TKeys.shippingQuickViewBody.tr,
+                        fontSize: 12.5,
+                        height: 1.45,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildShippingDropdown(),
+                      const SizedBox(height: 12),
+                      _buildSaveShippingButton(),
+                    ],
+
                     // ── Measurements ──────────────────────────────────────
                     // Product-level scope — a product request has no placement
                     // to measure against. Unknown-UPC items have no catalog
@@ -1834,6 +1773,86 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
       fontWeight: FontWeight.w800,
       letterSpacing: 1.3,
       color: AppColors.textPrimary,
+    );
+  }
+
+  /// "99 NOK", with decimals kept only when they exist.
+  String _nok(num v) => '${v % 1 == 0 ? v.toInt() : v} NOK';
+
+  String _shippingLabel(num v) => v == _standardShipping
+      ? TKeys.shippingStandardSuffix.trParams({'price': _nok(v)})
+      : _nok(v);
+
+  Widget _buildShippingDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.inputBorder),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<num>(
+          value: _shipping,
+          isExpanded: true,
+          isDense: true,
+          borderRadius: BorderRadius.circular(12),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+              color: AppColors.textSecondary),
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+          items: [
+            for (final tier in _shippingTiers)
+              DropdownMenuItem<num>(
+                value: tier,
+                child: Text(_shippingLabel(tier)),
+              ),
+          ],
+          onChanged: _savingShipping
+              ? null
+              : (v) {
+                  if (v != null) setState(() => _shipping = v);
+                },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSaveShippingButton() {
+    final dirty = _shipping != _savedShipping;
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: dirty && !_savingShipping ? _saveShipping : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.brandNavy,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.inputBorder,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: _savingShipping
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : CustomText(
+                TKeys.saveShipping.tr,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: dirty ? Colors.white : AppColors.textSecondary,
+              ),
+      ),
     );
   }
 
@@ -2130,7 +2149,7 @@ class _UpcEntryRow extends StatelessWidget {
                     ),
                   )
                 : CustomText(
-                    TKeys.thrownLabel.tr,
+                    TKeys.addAction.tr,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: AppColors.white,
@@ -2505,3 +2524,267 @@ class _ScanCard extends StatelessWidget {
   }
 }
 
+
+/// Stream selector for the Assign-to-live tab.
+///
+/// A tap target that opens a modal sheet, not a [DropdownButton]. The dropdown
+/// it replaced painted its menu in an overlay anchored to the button, so on a
+/// short screen — or with the tab scrolled down past its rest position, which
+/// is where a pull-to-refresh leaves it — the list ran off the bottom of the
+/// window and the last streams were unreachable. A sheet is laid out against
+/// the window instead of the button, so it can never be clipped by the bottom
+/// of the screen or by the nav bar, and it has room for the two-line rows the
+/// old cramped menu was squeezing.
+class _StreamPickerField extends StatelessWidget {
+  const _StreamPickerField({
+    required this.selected,
+    required this.streams,
+    required this.formatDate,
+    required this.onSelected,
+  });
+
+  final StreamModel? selected;
+  final List<StreamModel> streams;
+  final String Function(DateTime?) formatDate;
+  final ValueChanged<StreamModel> onSelected;
+
+  Future<void> _open(BuildContext context) async {
+    final picked = await showModalBottomSheet<StreamModel>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _StreamPickerSheet(
+        selected: selected,
+        streams: streams,
+        formatDate: formatDate,
+      ),
+    );
+    if (picked != null) onSelected(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = selected;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _open(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: stream == null ? AppColors.grey : AppColors.brandNavy,
+              width: stream == null ? 1 : 1.4,
+            ),
+          ),
+          child: Row(
+            children: [
+              if (stream == null)
+                const Icon(Icons.live_tv_rounded,
+                    size: 20, color: AppColors.brandNavy)
+              else
+                _StatusDot(stream: stream),
+              const SizedBox(width: 12),
+              Expanded(
+                child: stream == null
+                    ? CustomText(
+                        TKeys.selectStream.tr,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CustomText(
+                            stream.title,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            color: AppColors.textPrimary,
+                          ),
+                          const SizedBox(height: 2),
+                          CustomText(
+                            formatDate(stream.scheduledStartTime),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ],
+                      ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.keyboard_arrow_down_rounded,
+                  size: 22, color: AppColors.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The sheet the picker opens: every scheduled stream as a full-width row,
+/// scrollable, capped at 70% of the window so the handle stays visible and the
+/// list is obviously more than what fits.
+class _StreamPickerSheet extends StatelessWidget {
+  const _StreamPickerSheet({
+    required this.selected,
+    required this.streams,
+    required this.formatDate,
+  });
+
+  final StreamModel? selected;
+  final List<StreamModel> streams;
+  final String Function(DateTime?) formatDate;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.grey,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  const Icon(Icons.live_tv_rounded,
+                      size: 19, color: AppColors.brandNavy),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: CustomText(
+                      TKeys.selectStream.tr,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                itemCount: streams.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                itemBuilder: (_, i) {
+                  final stream = streams[i];
+                  final isSelected = stream == selected;
+                  return Material(
+                    color: isSelected
+                        ? AppColors.brandYellow.withOpacity(0.16)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => Navigator.of(context).pop(stream),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.brandYellow
+                                : AppColors.grey,
+                            width: isSelected ? 1.6 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            _StatusDot(stream: stream),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  CustomText(
+                                    stream.title,
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  const SizedBox(height: 3),
+                                  CustomText(
+                                    formatDate(stream.scheduledStartTime),
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              const Padding(
+                                padding: EdgeInsets.only(left: 8),
+                                child: Icon(Icons.check_circle_rounded,
+                                    size: 20, color: AppColors.brandNavy),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Live / scheduled / other, as the coloured dot both the field and the sheet
+/// show beside a stream.
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.stream});
+
+  final StreamModel stream;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        color: stream.isLive
+            ? Colors.red
+            : stream.isScheduled
+                ? AppColors.brandYellow
+                : Colors.grey,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+}

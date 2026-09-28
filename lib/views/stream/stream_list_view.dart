@@ -101,7 +101,18 @@ class _StreamListViewState extends State<StreamListView> {
 
   @override
   Widget build(BuildContext context) {
-    const tabs = _StreamTab.values;
+    // Draft is commented out of the row for now. The enum case stays so a
+    // stream that still carries DRAFT resolves to a tab through
+    // [_StreamTabX.fromStatus] instead of falling through — only the chip is
+    // withheld. Put `_StreamTab.draft` back after `all` to restore it.
+    const tabs = [
+      _StreamTab.all,
+      // _StreamTab.draft,
+      _StreamTab.scheduled,
+      _StreamTab.live,
+      _StreamTab.ended,
+      _StreamTab.cancelled,
+    ];
 
     return Column(
       children: [

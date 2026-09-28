@@ -4,10 +4,10 @@ import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/env_config.dart';
+import '../core/config/session_scope.dart';
 import '../core/services/api_client.dart';
 import '../core/services/auth_service.dart';
 import '../features/notifications/application/push_notification_service.dart';
-import 'notification_controller.dart';
 
 /// Outcome of the post-login `GET /api/v1/auth/me` account check.
 enum AuthMeResult {
@@ -314,10 +314,9 @@ class AuthController extends GetxController {
     await _authService.logout();
     _isLoggedIn.value = false;
     _displayName.value = null;
-    // The inbox controller is permanent, so without this the next seller to
-    // sign in on this handset sees the previous account's rows and badge.
-    if (Get.isRegistered<NotificationController>()) {
-      Get.find<NotificationController>().clearNotifications();
-    }
+    // Nothing un-registers the home shell's controllers on its own, so the
+    // next seller to sign in on this handset would otherwise be handed the
+    // previous account's profile, dashboard, streams, stock and inbox.
+    resetSessionControllers();
   }
 }

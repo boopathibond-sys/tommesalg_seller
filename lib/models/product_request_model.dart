@@ -12,6 +12,10 @@ class ProductRequestProduct {
   final num? originalPrice;
   final num? regularPrice;
 
+  /// Per-product shipping tier in NOK. Null (or 0) means the seller never
+  /// picked one — the UI treats that as the 99 kr standard tier.
+  final num? shippingPriceNok;
+
   ProductRequestProduct({
     required this.id,
     required this.name,
@@ -25,6 +29,7 @@ class ProductRequestProduct {
     this.colorsAvailable = const [],
     this.originalPrice,
     this.regularPrice,
+    this.shippingPriceNok,
   });
 
   factory ProductRequestProduct.fromJson(Map<String, dynamic> json) {
@@ -48,6 +53,27 @@ class ProductRequestProduct {
           const [],
       originalPrice: json['originalPrice'] as num?,
       regularPrice: json['regularPrice'] as num?,
+      shippingPriceNok: json['shippingPriceNok'] is num
+          ? json['shippingPriceNok'] as num
+          : num.tryParse('${json['shippingPriceNok'] ?? ''}'),
+    );
+  }
+
+  ProductRequestProduct copyWith({num? shippingPriceNok}) {
+    return ProductRequestProduct(
+      id: id,
+      name: name,
+      brand: brand,
+      shortDescription: shortDescription,
+      image: image,
+      thumbnailUrl: thumbnailUrl,
+      images: images,
+      colour: colour,
+      sizesAvailable: sizesAvailable,
+      colorsAvailable: colorsAvailable,
+      originalPrice: originalPrice,
+      regularPrice: regularPrice,
+      shippingPriceNok: shippingPriceNok ?? this.shippingPriceNok,
     );
   }
 }
@@ -125,6 +151,23 @@ class ProductRequestItem {
           ? ProductRequestProduct.fromJson(
               json['product'] as Map<String, dynamic>)
           : null,
+    );
+  }
+
+  ProductRequestItem copyWith({ProductRequestProduct? product}) {
+    return ProductRequestItem(
+      id: id,
+      productId: productId,
+      quantityRequested: quantityRequested,
+      reservedQuantity: reservedQuantity,
+      pendingQuantity: pendingQuantity,
+      lineStatus: lineStatus,
+      isUnknownUpc: isUnknownUpc,
+      requestedUpc: requestedUpc,
+      requestedName: requestedName,
+      requestedImageUrls: requestedImageUrls,
+      sortOrder: sortOrder,
+      product: product ?? this.product,
     );
   }
 

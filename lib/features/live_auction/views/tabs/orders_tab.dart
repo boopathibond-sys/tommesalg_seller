@@ -9,6 +9,71 @@ import '../../controllers/auction_room_controller.dart';
 import '../../data/models/stream_order.dart';
 import '../../../../core/localization/translation_keys.dart';
 
+/// Opens the stream's orders as its own screen from the room's ⋮ menu.
+///
+/// Orders used to be a bottom-nav tab. The nav came off so the camera could own
+/// the whole screen, and orders are what the seller checks *between* lots — a
+/// full page gives the list the whole viewport (a sheet cut it off after a few
+/// rows) and a back arrow returns to the running broadcast, which never stops.
+Future<void> openStreamOrders(
+  BuildContext context,
+  AuctionRoomController ctrl,
+) {
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(builder: (_) => StreamOrdersView(ctrl: ctrl)),
+  );
+}
+
+/// Full-screen wrapper around [OrdersTab] — the app bar carries the title and
+/// the refresh action, so the list itself renders nothing but rows.
+class StreamOrdersView extends StatelessWidget {
+  const StreamOrdersView({super.key, required this.ctrl});
+
+  final AuctionRoomController ctrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.white,
+        surfaceTintColor: AppColors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        title: CustomText(
+          TKeys.rsStreamOrders.tr,
+          fontSize: 17,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        actions: [
+          Obx(() => ctrl.loadingOrders.value
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 18),
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation(AppColors.brandNavy),
+                      ),
+                    ),
+                  ),
+                )
+              : IconButton(
+                  tooltip: TKeys.refreshAction.tr,
+                  onPressed: ctrl.loadOrders,
+                  icon: const Icon(Icons.refresh_rounded,
+                      color: AppColors.textPrimary),
+                )),
+        ],
+      ),
+      body: SafeArea(top: false, child: OrdersTab(ctrl: ctrl)),
+    );
+  }
+}
+
 /// The Orders tab: who won each lot in this stream and for how much.
 /// Backed by `GET /api/v1/seller/streams/:id/orders` (loaded on open, with a
 /// pull-to-refresh + manual refresh).
@@ -30,67 +95,37 @@ class _OrdersTabState extends State<OrdersTab> {
   @override
   Widget build(BuildContext context) {
     final ctrl = widget.ctrl;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Row(
+    return Obx(() {
+      final orders = ctrl.orders;
+      if (orders.isEmpty) {
+        return RefreshIndicator(
+          color: AppColors.brandNavy,
+          onRefresh: ctrl.loadOrders,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics()),
             children: [
-              Expanded(
-                child: CustomText(TKeys.otWinningOrders.tr, fontSize: 15,
-                    fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-              ),
+              SizedBox(height: MediaQuery.sizeOf(context).height * 0.18),
               Obx(() => ctrl.loadingOrders.value
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2.2,
-                          valueColor: AlwaysStoppedAnimation(AppColors.brandNavy)),
-                    )
-                  : IconButton(
-                      onPressed: ctrl.loadOrders,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.refresh_rounded,
-                          size: 20, color: AppColors.textSecondary),
-                    )),
+                  ? const SizedBox.shrink()
+                  : const _EmptyOrders()),
             ],
           ),
+        );
+      }
+      return RefreshIndicator(
+        color: AppColors.brandNavy,
+        onRefresh: ctrl.loadOrders,
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics()),
+          itemCount: orders.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (_, i) => _OrderRow(order: orders[i]),
         ),
-        Expanded(
-          child: Obx(() {
-            final orders = ctrl.orders;
-            if (orders.isEmpty) {
-              return RefreshIndicator(
-                color: AppColors.brandNavy,
-                onRefresh: ctrl.loadOrders,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics()),
-                  children: [
-                    SizedBox(height: MediaQuery.sizeOf(context).height * 0.18),
-                    Obx(() => ctrl.loadingOrders.value
-                        ? const SizedBox.shrink()
-                        : const _EmptyOrders()),
-                  ],
-                ),
-              );
-            }
-            return RefreshIndicator(
-              color: AppColors.brandNavy,
-              onRefresh: ctrl.loadOrders,
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics()),
-                itemCount: orders.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (_, i) => _OrderRow(order: orders[i]),
-              ),
-            );
-          }),
-        ),
-      ],
-    );
+      );
+    });
   }
 }
 
@@ -131,7 +166,8 @@ class _OrderRow extends StatelessWidget {
     if (id == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => OrderDetailView(orderId: id, initial: _asSellerOrder(id)),
+        builder: (_) =>
+            OrderDetailView(orderId: id, initial: _asSellerOrder(id)),
       ),
     );
   }
@@ -149,7 +185,8 @@ class _OrderRow extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: AppColors.brandNavy.withOpacity(0.04),
-            blurRadius: 12, offset: const Offset(0, 3),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -158,11 +195,15 @@ class _OrderRow extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: Container(
-              width: 48, height: 48, color: AppColors.inputFill,
+              width: 48,
+              height: 48,
+              color: AppColors.inputFill,
               child: showImage
-                  ? Image.network(image, fit: BoxFit.cover,
+                  ? Image.network(image,
+                      fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => const Icon(
-                          Icons.image_outlined, color: AppColors.textMuted))
+                          Icons.image_outlined,
+                          color: AppColors.textMuted))
                   : const Icon(Icons.shopping_bag_outlined,
                       color: AppColors.textMuted),
             ),
@@ -174,14 +215,17 @@ class _OrderRow extends StatelessWidget {
               children: [
                 if (order.orderNumber != null)
                   CustomText(
-                  TKeys.otOrderNumber
-                      .trParams({'number': '${order.orderNumber}'}),
-                      fontSize: 11, fontWeight: FontWeight.w700,
+                      TKeys.otOrderNumber
+                          .trParams({'number': '${order.orderNumber}'}),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                       color: AppColors.textMuted),
                 CustomText(order.productTitle ?? TKeys.otLot.tr,
-                    fontSize: 14, fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 3),
                 Row(
                   children: [
@@ -190,18 +234,23 @@ class _OrderRow extends StatelessWidget {
                     const SizedBox(width: 4),
                     Expanded(
                       child: CustomText(order.buyerName ?? TKeys.otWinner.tr,
-                          fontSize: 12, fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.textSecondary,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
                     ),
                   ],
                 ),
-                if (order.buyerEmail != null && order.buyerEmail!.isNotEmpty) ...[
+                if (order.buyerEmail != null &&
+                    order.buyerEmail!.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   CustomText(order.buyerEmail!,
-                      fontSize: 11, fontWeight: FontWeight.w500,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
                       color: AppColors.textMuted,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ],
                 if (order.status != null) ...[
                   const SizedBox(height: 5),
@@ -211,8 +260,10 @@ class _OrderRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          CustomText(_kr(order.amount), fontSize: 15,
-              fontWeight: FontWeight.w800, color: AppColors.brandNavy),
+          CustomText(_kr(order.amount),
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.brandNavy),
           if (tappable) ...[
             const SizedBox(width: 2),
             const Icon(Icons.chevron_right_rounded,
@@ -236,7 +287,8 @@ class _StatusTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = status.toUpperCase();
-    final paid = s.contains('PAID') || s.contains('COMPLETE') || s.contains('FULFIL');
+    final paid =
+        s.contains('PAID') || s.contains('COMPLETE') || s.contains('FULFIL');
     final pending = s.contains('PENDING') || s.contains('AWAIT');
     final c = paid
         ? const Color(0xFF2E7D32)
@@ -249,8 +301,8 @@ class _StatusTag extends StatelessWidget {
         color: c.withOpacity(0.1),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: CustomText(s, fontSize: 9.5,
-          fontWeight: FontWeight.w800, color: c),
+      child:
+          CustomText(s, fontSize: 9.5, fontWeight: FontWeight.w800, color: c),
     );
   }
 }
@@ -265,14 +317,19 @@ class _EmptyOrders extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.receipt_long_outlined, size: 40, color: AppColors.textMuted),
+            const Icon(Icons.receipt_long_outlined,
+                size: 40, color: AppColors.textMuted),
             const SizedBox(height: 12),
-            CustomText(TKeys.otNoOrdersYet.tr, fontSize: 16,
-                fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+            CustomText(TKeys.otNoOrdersYet.tr,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary),
             const SizedBox(height: 4),
             CustomText(TKeys.otOrdersAppearHere.tr,
-                fontSize: 13, fontWeight: FontWeight.w500,
-                textAlign: TextAlign.center, color: AppColors.textSecondary),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                textAlign: TextAlign.center,
+                color: AppColors.textSecondary),
           ],
         ),
       ),

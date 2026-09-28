@@ -1,5 +1,5 @@
 buildscript {
-    ext.kotlin_version = '2.1.0'
+    ext.kotlin_version = '2.4.0'
     repositories {
         google()
         mavenCentral()
@@ -21,6 +21,23 @@ rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
+
+// Some plugins (e.g. agora_rtc_engine) still declare an old compileSdk, which
+// fails AAR metadata checks against modern AndroidX. Pull them up to the app's.
+// Must be registered before the evaluationDependsOn(':app') block below, which
+// eagerly evaluates :app.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                if (compileSdk < 36) {
+                    compileSdk 36
+                }
+            }
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(':app')
 }

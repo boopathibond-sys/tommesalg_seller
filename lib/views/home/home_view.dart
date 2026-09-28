@@ -155,9 +155,6 @@ class _HomeViewState extends State<HomeView> {
       },
       child: Scaffold(
         backgroundColor: AppColors.white,
-        // The Home hero is navy and runs to the top of the screen, so the strip
-        // behind the status bar is painted navy (with light icons) on that tab
-        // only — every other tab keeps the white shell it was built against.
         body: AnnotatedRegion<SystemUiOverlayStyle>(
           value: _index == 0
               ? SystemUiOverlayStyle.light.copyWith(
@@ -170,11 +167,26 @@ class _HomeViewState extends State<HomeView> {
                   statusBarIconBrightness: Brightness.dark,
                   statusBarBrightness: Brightness.light,
                 ),
+          // White is the ground the whole shell sits on. The navy is confined
+          // to the status-bar strip below — painting it behind the body meant
+          // an overscroll at the bottom of Home (bouncing physics) pulled the
+          // content up off a near-black backdrop.
           child: ColoredBox(
-            color: _index == 0 ? AppColors.brandNavy : AppColors.white,
-            child: SafeArea(
-          bottom: false,
-          child: IndexedStack(
+            color: AppColors.white,
+            child: Column(
+              children: [
+                // The Home hero runs to the top of the screen, so the strip
+                // behind the status bar is painted navy (with light icons) on
+                // that tab only; every other tab keeps the white shell.
+                Container(
+                  height: MediaQuery.paddingOf(context).top,
+                  color: _index == 0 ? AppColors.brandNavy : AppColors.white,
+                ),
+                Expanded(
+                  child: SafeArea(
+                    top: false,
+                    bottom: false,
+                    child: IndexedStack(
             index: _index,
             children: [
               _HomeTab(
@@ -192,7 +204,10 @@ class _HomeViewState extends State<HomeView> {
               const StockView(),
               _ProfileTab(profileCtrl: _profileCtrl),
             ],
-          ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -678,8 +693,8 @@ class _HomeHero extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
-                  const CustomText(
-                    'Set up a shipment, add your products and go live in minutes.',
+                  CustomText(
+                    TKeys.readyToSellBody.tr,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     height: 1.45,
@@ -2283,7 +2298,10 @@ class _ProfileContent extends StatelessWidget {
       child: Column(
         children: [
           _ProfileHeader(profile: profile, profileCtrl: profileCtrl),
-          const SizedBox(height: 56),
+          // The header already ends flush with the bottom of the avatar, so
+          // this is pure breathing room — 56 left the name floating a whole
+          // avatar's width away from the face it belongs to.
+          const SizedBox(height: 14),
           // Name + business
           CustomText(
             profile.displayName,
@@ -2305,7 +2323,7 @@ class _ProfileContent extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (profile.verified) _buildBadge(
-                Icons.verified_rounded,
+                Icons.check_circle_rounded,
                 TKeys.verifiedLabel.tr,
                 const Color(0xFF2E7D32),
               ),
@@ -2479,12 +2497,17 @@ class _ProfileContent extends StatelessWidget {
     );
   }
 
+  /// The account-status pill beside Verified.
+  ///
+  /// Its glyph is deliberately *not* another tick: sat next to the verified
+  /// badge, two check marks read as one repeated statement rather than two
+  /// separate facts. A bolt says "this account is switched on" on its own.
   Widget _buildStatusBadge(String status) {
     final isActive = status == 'ACTIVE';
     final color = isActive ? const Color(0xFF1565C0) : AppColors.vipps;
     final label = isActive ? TKeys.activeAccount.tr : status;
     return _buildBadge(
-      isActive ? Icons.check_circle_outline_rounded : Icons.pending_rounded,
+      isActive ? Icons.bolt_rounded : Icons.pending_rounded,
       label,
       color,
     );

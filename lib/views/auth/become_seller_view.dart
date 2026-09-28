@@ -159,9 +159,9 @@ class _BecomeSellerViewState extends State<BecomeSellerView> {
   // ── CV ─────────────────────────────────────────────────────────────────
 
   Future<void> _pickCv() async {
-    FilePickerResult? result;
+    PlatformFile? picked;
     try {
-      result = await FilePicker.pickFiles(
+      picked = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: SellerApplicationController.cvAllowedExtensions,
       );
@@ -173,7 +173,7 @@ class _BecomeSellerViewState extends State<BecomeSellerView> {
       return;
     }
 
-    final path = result?.files.single.path;
+    final path = picked?.path;
     if (path == null || !mounted) return;
 
     final extension = path.split('.').last.toLowerCase();
@@ -200,7 +200,7 @@ class _BecomeSellerViewState extends State<BecomeSellerView> {
     if (!mounted) return;
     setState(() {
       _cvPath = path;
-      _cvName = result?.files.single.name ?? path.split(Platform.pathSeparator).last;
+      _cvName = picked?.name ?? path.split(Platform.pathSeparator).last;
       _cvBytes = size;
     });
     // A different file invalidates any key from an earlier attempt.

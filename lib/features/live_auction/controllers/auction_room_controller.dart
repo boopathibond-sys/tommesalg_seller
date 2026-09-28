@@ -33,6 +33,27 @@ import '../data/services/seller_session_service.dart';
 import '../views/widgets/control_request_dialog.dart';
 import '../../../core/localization/translation_keys.dart';
 
+/// The figures a bid event carries, once [AuctionRoomController._readBidUpdate]
+/// has found them in whatever envelope the backend used.
+class _BidUpdate {
+  const _BidUpdate({
+    required this.amount,
+    this.auctionId,
+    this.bidCount,
+    this.bidderName,
+  });
+  final num amount;
+
+  /// Who placed it, when the frame named them — what the winning-bidder pill
+  /// shows. Null simply leaves the last known name in place.
+  final String? bidderName;
+
+  /// Null when the frame didn't name a lot; the update is then taken as being
+  /// about whichever one is running.
+  final String? auctionId;
+  final int? bidCount;
+}
+
 /// A product the seller can add to the queue (sourced from the stream's
 /// prepared product requests).
 class AddableProduct {
@@ -68,6 +89,11 @@ class AuctionRoomController extends GetxController {
 
   AgoraRtcBroadcasterService get rtc => _rtc;
 
+  /// The Agora channel this room is on, once bootstrap has resolved it. The
+  /// watcher's remote video view needs it to name the connection it renders
+  /// from.
+  String? get rtcChannel => _rtcChannel;
+
   // ── Reactive state ───────────────────────────────────────────────────────
   final Rxn<AuctionRoomSnapshot> snapshot = Rxn<AuctionRoomSnapshot>();
   final Rxn<SellerSession> session = Rxn<SellerSession>();
@@ -102,6 +128,54 @@ class AuctionRoomController extends GetxController {
   final RxBool rtcJoined = false.obs;
   final RxBool streamEnded = false.obs;
 
+  // ── Watch mode (a seller device without auction control) ──────────────────
+  // Exactly one seller device publishes. Every other device in the room joins
+  // the same Agora channel as an *audience member* and watches that feed, so a
+  // second phone shows what buyers are seeing instead of a second camera that
+  // can never go on air. The axis is auction control, not PRIMARY: a PRIMARY
+  // device that handed control away is a watcher too, and the device that holds
+  // control is the one whose picture everyone else sees.
+
+  /// True while this device is watching the controlling device's camera rather
+  /// than running its own. Drives the whole room UI: no broadcast dock, no
+  /// start-auction, no queue edits.
+  final RxBool watching = false.obs;
+
+  /// True once the audience join has landed. Distinct from [rtcJoined], which
+  /// stays false on a watcher — nothing is being published from here.
+  final RxBool watchJoined = false.obs;
+
+  /// The controlling device's RTC uid, once it shows up in the channel. Null
+  /// means nobody is broadcasting yet ("waiting for the main device").
+  final RxnInt watchedUid = RxnInt();
+
+  /// Whether the watched host is actually sending frames right now — false
+  /// while its camera is off or its feed is stopped, so the watcher is told
+  /// which of the two it is instead of staring at a black stage.
+  final RxBool remoteVideoLive = false.obs;
+
+  /// Set when the audience join itself failed (token, network). The Live tab
+  /// offers a retry rather than leaving a permanently blank stage.
+  final RxnString watchError = RxnString();
+
+  /// True while an audience join is in flight, so the stage can say
+  /// "connecting" instead of "waiting for the main device".
+  final RxBool watchConnecting = false.obs;
+
+  /// Which role the RTC engine is actually running in — true publishing, false
+  /// watching, null before the first start. Compared against [isController] to
+  /// notice a handoff and swap the engine over; kept separate from [watching]
+  /// so the flag the UI reads is only ever flipped by a switch that ran.
+  bool? _broadcastingMedia;
+
+  /// Serialises the role switches, so two polls landing together can't run a
+  /// swap twice or interleave a leave with a join.
+  Future<void>? _mediaRoleTask;
+
+  /// True while a swap is running — the stage shows a spinner rather than a
+  /// half-torn-down camera.
+  final RxBool mediaRoleSwitching = false.obs;
+
   // Chat (Agora RTM) connection state — surfaced so a silent RTM failure shows
   // a retry affordance instead of an empty, dead chat.
   final RxBool chatReady = false.obs;
@@ -109,6 +183,10 @@ class AuctionRoomController extends GetxController {
 
   final RxBool micMuted = false.obs;
   final RxBool cameraOff = false.obs;
+
+  /// Whether the outgoing picture is mirrored left↔right. Off by default: a
+  /// seller holding up a label wants buyers to be able to read it.
+  final RxBool videoMirrored = false.obs;
   final RxInt audienceCount = 0.obs;
 
   // ── Camera / lens selection ───────────────────────────────────────────────
@@ -141,6 +219,12 @@ class AuctionRoomController extends GetxController {
   /// PUT / DELETE results are applied immediately.
   final RxnString announcement = RxnString();
   final RxBool announcementSaving = false.obs;
+
+  /// The stream's description — the "Show Notes" the seller writes for buyers,
+  /// or null when none is set. Held here for the same reason as [announcement]:
+  /// a partial frame that never mentions `description` must not blank it.
+  final RxnString showNotes = RxnString();
+  final RxBool showNotesSaving = false.obs;
 
   final RxBool queueActionLoading = false.obs;
   final RxBool creatingRandomProduct = false.obs;
@@ -234,13 +318,33 @@ class AuctionRoomController extends GetxController {
   /// i.e. the session is claimed but the primary device still owns the room.
   /// Drives the "Request control" pill in place of Go Live.
   bool get needsControl => session.value != null && !isController;
+
+  /// Whether the local camera / mic controls apply to this device at all.
+  ///
+  /// False on a watcher, whose engine is an audience member with no capture
+  /// source: the dock these drive is hidden there, and this is the backstop
+  /// that keeps a stale callback or a pending gesture from restarting a camera
+  /// the device has deliberately put away.
+  bool get _canDriveMedia =>
+      isController && !watching.value && !mediaRoleSwitching.value;
   bool get isLive => stream?.isLive ?? false;
   bool get chatDisabled => stream?.chatDisabled ?? false;
   List<String> get mutedUserIds => snapshot.value?.mutedUserIds ?? const [];
   bool isMuted(String userId) => mutedUserIds.contains(userId);
+  /// Whether the queue may be edited from *this* device.
+  ///
+  /// The stream has to be in a state that has a queue at all, and this device
+  /// has to hold auction control. The backend accepts queue writes from any
+  /// device with a live session, but two sellers rearranging the same queue
+  /// from two handsets is how a lot gets started on the wrong product — so the
+  /// app keeps the queue with whoever is actually running the auction. A
+  /// watcher sees the queue read-only and can ask for control to change it.
   bool get canManageQueue {
     final s = stream;
-    return s != null && !s.isTerminal && (s.isLive || s.isScheduled);
+    return s != null &&
+        !s.isTerminal &&
+        (s.isLive || s.isScheduled) &&
+        isController;
   }
 
   @override
@@ -256,29 +360,46 @@ class AuctionRoomController extends GetxController {
     isBootstrapping.value = true;
     bootstrapError.value = null;
     permissionDenied.value = false;
+    // This is the retry path as well as the first entry — the error screen, the
+    // permission screen and a resume from settings all land here. Anything a
+    // previous attempt managed to bring up is torn down first, so a retry never
+    // stacks a second websocket, a second RTM login or an RTC engine stuck in
+    // the wrong role on top of the first.
+    await _teardownRealtime();
     try {
-      final granted = await _ensurePermissions();
-      if (!granted) {
-        permissionDenied.value = true;
-        isBootstrapping.value = false;
-        return;
-      }
-
       // 1) Claim the seller session (deviceId + sessionToken + control).
+      //    This comes first because the answer decides whether this device
+      //    needs a camera at all: a device that joins as a watcher never opens
+      //    one, so asking it for camera/mic up front would be prompting for
+      //    hardware it will not touch.
       session.value = await _sessionService.claim(streamId);
       _startHeartbeat();
       // Poll for role changes + incoming control requests. Must not wait on the
       // WS: a request raised from the seller web console reaches us only here.
       _startDevicePolling();
 
-      // 2) Load the authoritative snapshot.
+      // 2) Camera + mic, but only for the device that will publish. If it
+      //    refuses, hand the session straight back rather than sitting on the
+      //    controlling seat with no picture to give — another device can then
+      //    claim it and run the stream.
+      if (isController) {
+        final granted = await _ensurePermissions();
+        if (!granted) {
+          permissionDenied.value = true;
+          await _abandonSession();
+          isBootstrapping.value = false;
+          return;
+        }
+      }
+
+      // 3) Load the authoritative snapshot.
       final snap = await _api.getSnapshot(streamId);
       _applySnapshot(snap, authoritative: true);
 
-      // 3) Connect realtime transports.
+      // 4) Connect realtime transports.
       await _connectRealtime(snap);
 
-      // 4) Prepare addable products + device panel in the background, and make
+      // 5) Prepare addable products + device panel in the background, and make
       //    sure an empty Queue tab really means an empty queue.
       unawaited(fetchAddableProducts());
       unawaited(loadDevices());
@@ -310,6 +431,54 @@ class AuctionRoomController extends GetxController {
   /// grants are in place.
   Future<void> openPermissionSettings() => MediaPermissionService.openSettings();
 
+  /// Drops every realtime transport this room owns, leaving the session alone.
+  ///
+  /// The RTC engine is released rather than reused: it carries a client role
+  /// (publisher or audience) and, for a publisher, a live capture source, and
+  /// the next attempt may well need the other one. Rebuilding it costs a moment
+  /// on a screen that is already showing a spinner.
+  Future<void> _teardownRealtime() async {
+    _ws?.dispose();
+    _ws = null;
+    wsConnected.value = false;
+    await _rtm.dispose();
+    chatReady.value = false;
+    chatError.value = null;
+    _camera.detach();
+    cameraOptions.clear();
+    selectedCamera.value = null;
+    await _rtc.release();
+    rtcJoined.value = false;
+    watching.value = false;
+    watchJoined.value = false;
+    watchedUid.value = null;
+    remoteVideoLive.value = false;
+    watchError.value = null;
+    watchConnecting.value = false;
+    broadcastPaused.value = false;
+    micMuted.value = false;
+    cameraOff.value = false;
+    // Nothing is running, so the next device-snapshot must not mistake this for
+    // a role that needs switching — [_startMedia] owns the next start.
+    _broadcastingMedia = null;
+  }
+
+  /// Hands a just-claimed session back and forgets it, so [enterRoom] can claim
+  /// again on the next attempt.
+  ///
+  /// Used when a claim succeeds but the device turns out to be unable to do the
+  /// job it claimed the seat for (camera/mic refused). Without the reset the
+  /// device would hold PRIMARY — and with it the right to broadcast — while
+  /// showing the permission screen, locking every other device out of a stream
+  /// nobody can then put on air.
+  Future<void> _abandonSession() async {
+    await _releaseSession();
+    _sessionReleased = false;
+    session.value = null;
+    _heartbeatTimer?.cancel();
+    _devicePollTimer?.cancel();
+  }
+
   Future<void> _connectRealtime(AuctionRoomSnapshot snap) async {
     // The RTC channel name IS the stream id (same as the web client), which
     // already carries the `stream_` prefix — e.g. `stream_1783668733749_…`.
@@ -330,13 +499,19 @@ class AuctionRoomController extends GetxController {
     _rtmUserId = AuthService.instance.currentUser?.id;
 
     await Future.wait([
-      _startBroadcast(),
+      _startMedia(),
       _startChat(),
       _connectWs(snap),
     ]);
   }
 
-  // ── Agora RTC (broadcast) ────────────────────────────────────────────────
+  // ── Agora RTC (broadcast / watch) ────────────────────────────────────────
+
+  /// Brings the RTC engine up in whichever role this device holds: publisher
+  /// (camera preview, ready to go live) or watcher (audience, showing the
+  /// controlling device's feed).
+  Future<void> _startMedia() =>
+      isController ? _startBroadcast() : _startWatching();
 
   /// Brings up the local camera **preview only** — the seller sees themselves,
   /// but we do NOT join the RTC channel yet, so buyers receive nothing. Joining
@@ -344,6 +519,8 @@ class AuctionRoomController extends GetxController {
   /// The one exception is reconnecting to an already-LIVE stream, where we join
   /// immediately so the broadcast resumes.
   Future<void> _startBroadcast() async {
+    watching.value = false;
+    _broadcastingMedia = true;
     try {
       final channel = _rtcChannel!;
       final token = await _tokenService.fetchRtcToken(
@@ -352,10 +529,10 @@ class AuctionRoomController extends GetxController {
       );
       await _rtc.initialize(
         appId: token.appId,
-        onJoinSuccess: () => rtcJoined.value = true,
-        onAudienceJoined: (_) => audienceCount.value++,
-        onAudienceOffline: (_) =>
-            audienceCount.value = max(0, audienceCount.value - 1),
+        onJoinSuccess: _onRtcJoined,
+        onRemoteHostJoined: _onRemoteHostJoined,
+        onRemoteHostOffline: _onRemoteHostOffline,
+        onRemoteVideoChanged: _onRemoteVideoChanged,
         onConnectionStateChanged: (_, __) {},
         onTokenWillExpire: _renewRtcToken,
         onError: (msg) => log('RTC error: $msg'),
@@ -369,6 +546,212 @@ class AuctionRoomController extends GetxController {
     } catch (e) {
       log('startBroadcast error: $e');
     }
+  }
+
+  /// Joins the stream's channel as an audience member and renders whatever the
+  /// controlling device is broadcasting.
+  ///
+  /// Nothing here publishes, opens the camera or asks for a permission: a
+  /// watcher is, to Agora, an ordinary viewer of the same channel buyers watch.
+  /// It is safe to call before the controlling device has gone live — the join
+  /// simply sits in an empty channel until a host appears, and
+  /// [_onRemoteHostJoined] picks the feed up the moment it does.
+  Future<void> _startWatching() async {
+    final channel = _rtcChannel;
+    if (channel == null) return;
+    watching.value = true;
+    _broadcastingMedia = false;
+    watchError.value = null;
+    watchConnecting.value = true;
+    try {
+      final token = await _tokenService.fetchRtcToken(
+        channelName: channel,
+        uid: _rtcUid,
+      );
+      await _rtc.initialize(
+        appId: token.appId,
+        publisher: false,
+        onJoinSuccess: _onRtcJoined,
+        onRemoteHostJoined: _onRemoteHostJoined,
+        onRemoteHostOffline: _onRemoteHostOffline,
+        onRemoteVideoChanged: _onRemoteVideoChanged,
+        onConnectionStateChanged: (_, __) {},
+        onTokenWillExpire: _renewRtcToken,
+        onError: (msg) => log('RTC error: $msg'),
+      );
+      await _rtc.joinAsAudience(
+        token: token.token,
+        channelName: channel,
+        uid: _rtcUid,
+      );
+    } catch (e) {
+      log('startWatching error: $e');
+      watchError.value = TKeys.ltWatchFailed.tr;
+    } finally {
+      watchConnecting.value = false;
+    }
+  }
+
+  /// Retry for a failed audience join (the tap target on the watcher's stage).
+  ///
+  /// The engine usually survives a failed attempt, so this throws away whatever
+  /// half-join it is holding and asks for a fresh token: rejoining a channel
+  /// the engine still thinks it is in is refused by the SDK, and the stage
+  /// would sit on the same error it was just tapped to clear.
+  Future<void> retryWatching() async {
+    if (isController || watchConnecting.value) return;
+    watchError.value = null;
+    watchJoined.value = false;
+    watchedUid.value = null;
+    remoteVideoLive.value = false;
+    await _rtc.leaveChannel();
+    await _startWatching();
+  }
+
+  /// A join landed. Which flag it sets depends on the role: a publisher is now
+  /// on air, a watcher is merely connected.
+  void _onRtcJoined() {
+    if (watching.value) {
+      watchJoined.value = true;
+      rtcJoined.value = false;
+    } else {
+      rtcJoined.value = true;
+    }
+  }
+
+  /// A remote *host* appeared in the channel.
+  ///
+  /// As a watcher that is the controlling device's feed — adopt it as the one
+  /// we render. As the publisher it is another broadcaster, which is what the
+  /// viewer counter has always been counting.
+  void _onRemoteHostJoined(int uid) {
+    if (watching.value) {
+      // First host wins. A second one would only appear during a handoff, and
+      // switching stages mid-swap would flicker for no gain.
+      watchedUid.value ??= uid;
+      return;
+    }
+    audienceCount.value++;
+  }
+
+  void _onRemoteHostOffline(int uid) {
+    if (watching.value) {
+      if (watchedUid.value != uid) return;
+      // The controlling device left (ended, backgrounded, lost the network).
+      // Drop the canvas so the stage explains itself instead of freezing on the
+      // last frame; the next host to appear is picked up automatically.
+      watchedUid.value = null;
+      remoteVideoLive.value = false;
+      return;
+    }
+    audienceCount.value = max(0, audienceCount.value - 1);
+  }
+
+  void _onRemoteVideoChanged(int uid, bool hasVideo) {
+    if (!watching.value) return;
+    // A host can start sending video before onUserJoined is processed.
+    watchedUid.value ??= uid;
+    if (watchedUid.value != uid) return;
+    remoteVideoLive.value = hasVideo;
+  }
+
+  // ── Role switching (auction control moved) ───────────────────────────────
+
+  /// Brings the RTC engine in line with who holds auction control now.
+  ///
+  /// Called after every device-snapshot that changed this device's control
+  /// flag. Queued behind any switch already running, and a no-op when the
+  /// engine is already in the right role — including before bootstrap has
+  /// started one at all, which [_startMedia] owns.
+  Future<void> _applyMediaRole() {
+    final next = (_mediaRoleTask ?? Future<void>.value())
+        .then((_) => _syncMediaRole())
+        .catchError((Object e) => log('media role switch error: $e'));
+    _mediaRoleTask = next;
+    return next;
+  }
+
+  Future<void> _syncMediaRole() async {
+    final current = _broadcastingMedia;
+    if (current == null) return; // bootstrap owns the first start
+    final want = isController;
+    if (current == want) return;
+    if (streamEnded.value || isClosed) return;
+    _broadcastingMedia = want;
+    mediaRoleSwitching.value = true;
+    try {
+      if (want) {
+        await _switchToBroadcasting();
+      } else {
+        await _switchToWatching();
+      }
+    } finally {
+      mediaRoleSwitching.value = false;
+    }
+  }
+
+  /// This device was handed auction control: stop watching and bring its own
+  /// camera up as a preview.
+  ///
+  /// Publishing is *not* started here. Taking control mid-stream is usually a
+  /// seller picking a second phone up before it is pointed at anything, so the
+  /// picture buyers get stays the seller's decision — the Go Live pill is
+  /// waiting for them.
+  Future<void> _switchToBroadcasting() async {
+    await _rtc.leaveChannel();
+    watching.value = false;
+    watchJoined.value = false;
+    watchedUid.value = null;
+    remoteVideoLive.value = false;
+    watchError.value = null;
+
+    // Watchers never asked for camera/mic, so this is the first time this
+    // device needs them. A refusal leaves it with control it cannot use, so
+    // say so through the room's permission screen rather than a dead stage.
+    final granted = await _ensurePermissions();
+    if (!granted) {
+      // Control without a camera is a dead room. Release the engine so the
+      // permission screen's "Try again" re-bootstraps from scratch rather than
+      // reusing an audience engine that can never preview.
+      await _teardownRealtime();
+      permissionDenied.value = true;
+      return;
+    }
+
+    if (_rtc.isInitialized) {
+      await _rtc.becomePublisher();
+      // The engine was created without the lens hook (watchers don't capture),
+      // so resolve the seller's saved camera now that capture is running.
+      await _initCameraSelection(_rtc.engine);
+      await _rtc.reapplyMirror();
+    } else {
+      // The watch path never got an engine up (a failed join). Build one.
+      await _startBroadcast();
+    }
+    _broadcastingMedia = true;
+    // Manual mute state is per-device and meaningless while watching; start
+    // the publisher role from a clean, un-muted, un-paused slate.
+    micMuted.value = false;
+    cameraOff.value = false;
+    broadcastPaused.value = false;
+    _showInfo(TKeys.acControlNowYours.tr);
+  }
+
+  /// Auction control moved to another device: take this one off air and put it
+  /// on the controlling device's feed.
+  Future<void> _switchToWatching() async {
+    // Leaving the channel is what actually stops buyers receiving this device.
+    await _rtc.leaveChannel();
+    rtcJoined.value = false;
+    broadcastPaused.value = false;
+    if (_rtc.isInitialized) {
+      _camera.detach();
+      cameraOptions.clear();
+      selectedCamera.value = null;
+      await _rtc.becomeAudience();
+    }
+    _showInfo(TKeys.acControlNowElsewhere.tr);
+    await _startWatching();
   }
 
   /// Joins the RTC channel and begins publishing camera + mic to buyers. Called
@@ -413,22 +796,46 @@ class AuctionRoomController extends GetxController {
   }
 
   Future<void> toggleMic() async {
+    if (!_canDriveMedia) return;
     final next = !micMuted.value;
     await _rtc.setMuted(next);
     micMuted.value = next;
   }
 
   Future<void> toggleCamera() async {
+    if (!_canDriveMedia) return;
     final next = !cameraOff.value;
     await _rtc.setCameraOff(next);
     cameraOff.value = next;
   }
+
+  /// The Mirror control: swaps the picture left↔right for buyers, and mirrors
+  /// the seller's own stage to match so the preview never disagrees with what
+  /// is going out.
+  ///
+  /// Purely a media setting — no channel is left, no capture source is
+  /// restarted and no auction state is touched, so it is safe to flip mid-lot.
+  /// The service swallows its own failures, so the flag only follows what the
+  /// engine actually accepted.
+  ///
+  /// Takes the state to move *to* rather than flipping whatever it finds: the
+  /// menu reads the flag when it opens and acts when it closes, so a toggle
+  /// would act on a value that is already a moment old.
+  Future<void> setMirrored(bool mirrored) async {
+    if (!_canDriveMedia) return;
+    if (videoMirrored.value == mirrored) return;
+    await _rtc.setMirrored(mirrored);
+    videoMirrored.value = _rtc.isMirrored;
+  }
+
+  Future<void> toggleMirror() => setMirrored(!videoMirrored.value);
 
   /// The Flip control. Jumps to the opposite-facing lens through the same
   /// selection path as the picker, so the two never disagree about which
   /// camera is live; falls back to Agora's plain flip when we have no
   /// capability list to reason about.
   Future<void> switchCamera() async {
+    if (!_canDriveMedia) return;
     final current = selectedCamera.value;
     final options = cameraOptions;
     if (current == null || options.isEmpty) {
@@ -475,6 +882,7 @@ class AuctionRoomController extends GetxController {
   /// auction, its timer and its bids are untouched. Repeat taps while a switch
   /// is in flight are dropped, and a failure leaves the previous lens running.
   Future<void> selectCamera(SellerCameraOption option) async {
+    if (!_canDriveMedia) return;
     if (cameraSwitching.value) return;
     if (selectedCamera.value?.mode == option.mode) return;
     cameraSwitching.value = true;
@@ -489,6 +897,9 @@ class AuctionRoomController extends GetxController {
       // Capture was torn down and rebuilt; make sure the channel still counts
       // the camera as published before trusting that buyers can see it.
       await _rtc.ensureCameraPublishing();
+      // The new capture source comes up unmirrored, so a seller who had chosen
+      // Mirror would otherwise see it silently undone by picking another lens.
+      await _rtc.reapplyMirror();
       // The rail's manual mute states survive a capture restart on the SDK
       // side, but re-assert them so a restart can never silently un-hide a
       // seller who had the camera off or the broadcast stopped.
@@ -504,6 +915,7 @@ class AuctionRoomController extends GetxController {
   /// Re-runs capability discovery — for a seller who plugged in / unlocked a
   /// lens, or simply to retry after a failed query.
   Future<void> refreshCameraCapabilities() async {
+    if (!_canDriveMedia) return;
     final options = await _camera.queryOptions();
     cameraOptions.assignAll(options);
     final current = selectedCamera.value;
@@ -811,8 +1223,129 @@ class AuctionRoomController extends GetxController {
         unawaited(_refreshAfterSale());
         break;
       default:
+        _handleUnmodelledEvent(msg);
         break;
     }
+  }
+
+  /// Anything the room doesn't model by name.
+  ///
+  /// This used to be a bare `default: break`, and that is what made a bid take
+  /// seconds to show: the backend announces one with its own event type, and
+  /// dropping it left the card sitting on the last `SNAPSHOT` until the next
+  /// one happened along. The event carries the figures already — there is no
+  /// reason to wait for a round trip that has nothing new in it.
+  ///
+  /// Rather than guessing at type names (the contract in `lib/raw` documents
+  /// the resume handshake and `SNAPSHOT`, never the broadcast events), the
+  /// payload is mined by shape: an amount plus an auction id is a bid whatever
+  /// the frame is called. A wrong guess costs nothing — [_applyBidUpdate] is
+  /// forward-only, and the next snapshot overwrites everything regardless.
+  void _handleUnmodelledEvent(Map<String, dynamic> msg) {
+    // Keep-alives and the resume handshake are expected traffic, not events —
+    // naming them would bury the frames worth looking at.
+    const quiet = {'pong', 'ping', 'WS_RESUME_ACK', 'RESUME_ACK'};
+    if (quiet.contains(msg['type'])) return;
+    final payload = msg['payload'] is Map<String, dynamic>
+        ? msg['payload'] as Map<String, dynamic>
+        : (msg['data'] is Map<String, dynamic>
+            ? msg['data'] as Map<String, dynamic>
+            : msg);
+    final bid = _readBidUpdate(payload);
+    if (bid != null) _applyBidUpdate(bid);
+    if (kReleaseMode) return;
+    log('WS "${msg['type']}" — '
+        '${bid == null ? 'no bid figures in payload' : 'read as a bid: '
+            '${bid.amount} (${bid.bidCount ?? '?'} bids)'}');
+  }
+
+  /// Posts a bid read off a WS event straight onto the running lot.
+  ///
+  /// Forward-only in both figures independently: an amount that doesn't beat
+  /// what the card already shows, and a count that doesn't exceed it, are
+  /// dropped. That is what makes it safe to apply an event we only inferred —
+  /// an out-of-order or speculative frame can never walk the price backwards,
+  /// and a `SNAPSHOT` remains the authority the moment one arrives.
+  void _applyBidUpdate(_BidUpdate bid) {
+    final snap = snapshot.value;
+    final active = snap?.activeAuction;
+    if (snap == null || active == null) return;
+    // A frame about some other lot — a late one from the auction we just
+    // ended, say — is not ours to apply.
+    if (bid.auctionId != null &&
+        active.id != null &&
+        bid.auctionId != active.id) {
+      return;
+    }
+    final shown = active.highestBid ?? active.currentPrice ?? 0;
+    final beatsPrice = bid.amount > shown;
+    final beatsCount = bid.bidCount != null && bid.bidCount! > active.bidCount;
+    if (!beatsPrice && !beatsCount) return;
+    snapshot.value = snap.copyWith(
+      activeAuction: active.copyWith(
+        highestBid: beatsPrice ? bid.amount : null,
+        bidCount: beatsCount ? bid.bidCount : null,
+        // Only when this bid actually took the lead: a frame that lost the
+        // forward-only race must not rename the seller's winner.
+        winnerName: beatsPrice ? bid.bidderName : null,
+      ),
+    );
+  }
+
+  /// Pulls a bid out of an arbitrary event payload, or null when there isn't
+  /// one. The figures may sit at the top level or one wrapper down.
+  static _BidUpdate? _readBidUpdate(Map<String, dynamic> payload) {
+    for (final scope in [
+      payload,
+      if (payload['bid'] is Map)
+        Map<String, dynamic>.from(payload['bid'] as Map),
+      if (payload['auction'] is Map)
+        Map<String, dynamic>.from(payload['auction'] as Map),
+      if (payload['activeAuction'] is Map)
+        Map<String, dynamic>.from(payload['activeAuction'] as Map),
+    ]) {
+      // `price` is deliberately not in this list: on this backend a product's
+      // `price` is its retail figure, not a bid, and it is typically *higher*
+      // than the live one — reading it as a bid would sail past the
+      // forward-only guard and post a fictional price.
+      final amount = _firstNum(
+        scope,
+        const ['highestBid', 'amount', 'currentBid', 'bidAmount'],
+      );
+      final auctionId = _firstText(scope, const ['auctionId', 'id']) ??
+          _firstText(payload, const ['auctionId']);
+      if (amount == null || amount <= 0) continue;
+      // The bidder may be named flat or inside a `winner` / `bidder` map,
+      // and that map uses the same display-name keys the snapshot does.
+      final who = scope['winner'] ?? scope['bidder'] ?? payload['winner'];
+      final whoMap =
+          who is Map ? Map<String, dynamic>.from(who) : const <String, dynamic>{};
+      return _BidUpdate(
+        auctionId: auctionId,
+        amount: amount,
+        bidCount: _firstNum(scope, const ['bidCount', 'bids'])?.toInt(),
+        bidderName: _firstText(whoMap, const ['displayName', 'name']) ??
+            _firstText(scope, const ['bidderName', 'winnerName']),
+      );
+    }
+    return null;
+  }
+
+  static num? _firstNum(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final raw = json[key];
+      if (raw is num) return raw;
+      if (raw is Map && raw['amount'] is num) return raw['amount'] as num;
+    }
+    return null;
+  }
+
+  static String? _firstText(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final raw = json[key];
+      if (raw is String && raw.isNotEmpty) return raw;
+    }
+    return null;
   }
 
   /// The WS SNAPSHOT payload may sit at the message root or under a wrapper.
@@ -848,7 +1381,8 @@ class AuctionRoomController extends GetxController {
     if (drop) return;
 
     final queueBefore = productQueue;
-    final merged = _mergeMissing(incoming, snapshot.value);
+    final merged =
+        _keepLotDetails(_mergeMissing(incoming, snapshot.value), snapshot.value);
     snapshot.value = merged;
 
     _trackAuctionConclusion(incoming, merged);
@@ -878,6 +1412,7 @@ class AuctionRoomController extends GetxController {
     }
 
     _syncAnnouncement(incoming);
+    _syncShowNotes(incoming);
 
     final ts = merged.serverTimestamp;
     if (ts != null) {
@@ -920,6 +1455,52 @@ class AuctionRoomController extends GetxController {
       serverTimestamp: incoming.serverTimestamp ?? prev.serverTimestamp,
       realtime: incoming.realtime ?? prev.realtime,
       raw: incoming.raw,
+    );
+  }
+
+  /// Carries the running lot's details forward when the next frame is about
+  /// the same lot but says nothing about them.
+  ///
+  /// The `/start` echo and the lightweight frames that follow it come back with
+  /// the money fields blank, and taking that at face value made the card show
+  /// the starting price for an instant and then drop straight to "—". A frame
+  /// that is silent about a figure is not a frame saying the figure is gone —
+  /// the lot cannot lose the price it started at, or un-take a bid.
+  ///
+  /// Only same-lot frames merge. A different auction id, or no active auction
+  /// at all, replaces everything exactly as before, so the card never carries
+  /// one lot's numbers onto the next.
+  AuctionRoomSnapshot _keepLotDetails(
+    AuctionRoomSnapshot merged,
+    AuctionRoomSnapshot? prev,
+  ) {
+    final incoming = merged.activeAuction;
+    final previous = prev?.activeAuction;
+    if (incoming == null || previous == null) return merged;
+    if (incoming.id != null &&
+        previous.id != null &&
+        incoming.id != previous.id) {
+      return merged;
+    }
+    // `copyWith` keeps the incoming value for every null it is handed, so
+    // `incoming.x ?? previous.x` is a no-op whenever the frame did carry x.
+    final titleBlank = incoming.title == null || incoming.title!.isEmpty;
+    return merged.copyWith(
+      activeAuction: incoming.copyWith(
+        title: titleBlank ? previous.title : null,
+        image: incoming.image ?? previous.image,
+        startingPrice: incoming.startingPrice ?? previous.startingPrice,
+        currentPrice: incoming.currentPrice ?? previous.currentPrice,
+        highestBid: incoming.highestBid ?? previous.highestBid,
+        // Non-nullable, so a silent frame reads as 0 rather than as absent —
+        // hence forward-only rather than a null check.
+        bidCount: incoming.bidCount >= previous.bidCount
+            ? null
+            : previous.bidCount,
+        shippingPriceNok:
+            incoming.shippingPriceNok ?? previous.shippingPriceNok,
+        winnerName: incoming.winnerName ?? previous.winnerName,
+      ),
     );
   }
 
@@ -1055,6 +1636,7 @@ class AuctionRoomController extends GetxController {
   /// with the authoritative snapshot.
   Future<void> moveProduct(int oldIndex, int newIndex) async {
     if (session.value == null || !canManageQueue) return;
+    if (!_ensureControl(TKeys.actManageQueue.tr)) return;
     // ReorderableListView reports newIndex as the insertion slot; when dragging
     // downward the target shifts by one once the item is removed.
     if (newIndex > oldIndex) newIndex -= 1;
@@ -1107,6 +1689,10 @@ class AuctionRoomController extends GetxController {
   Future<void> _runQueueMutation(Future<MutationResult> Function() op) async {
     if (queueActionLoading.value) return;
     if (session.value == null) return;
+    // The queue belongs to whoever is running the auction (see
+    // [canManageQueue]). The buttons are already hidden on a watcher; this is
+    // what makes a stale one — a sheet left open through a handoff — inert.
+    if (!_ensureControl(TKeys.actManageQueue.tr)) return;
     queueActionLoading.value = true;
     try {
       final result = await op();
@@ -1132,6 +1718,7 @@ class AuctionRoomController extends GetxController {
 
   Future<bool> startAuction(StartAuctionParams params) async {
     if (session.value == null || startLoading.value) return false;
+    if (!_ensureControl(TKeys.actStartLot.tr)) return false;
     startLoading.value = true;
     // The lot we're about to start is the queue head. Capture it now — the
     // start mutation removes it from the queue, and its name/price let us fill
@@ -1175,7 +1762,11 @@ class AuctionRoomController extends GetxController {
 
     final needsTitle = active.title == null || active.title!.isEmpty;
     final needsPrice = active.displayPrice == null;
-    if (!needsTitle && !needsPrice) return;
+    // Shipping rides the same gap: the seller picked it in the start sheet a
+    // moment ago, so the card can show it straight away rather than blank
+    // until the server echoes it back.
+    final needsShipping = active.shippingPrice == null;
+    if (!needsTitle && !needsPrice && !needsShipping) return;
 
     final enriched = active.copyWith(
       title: needsTitle ? head?.title : null,
@@ -1183,12 +1774,16 @@ class AuctionRoomController extends GetxController {
       startingPrice: needsPrice
           ? (params.startingPrice ?? head?.startingPrice ?? head?.dutchPrice)
           : null,
+      shippingPriceNok: needsShipping
+          ? (params.shippingPriceNok ?? head?.shippingPriceNok)
+          : null,
     );
     snapshot.value = snap.copyWith(activeAuction: enriched);
   }
 
   Future<void> endAuction() async {
     if (session.value == null || endLoading.value) return;
+    if (!_ensureControl(TKeys.actEndLot.tr)) return;
     endLoading.value = true;
     try {
       final result = await _api.endAuction(
@@ -1234,6 +1829,7 @@ class AuctionRoomController extends GetxController {
 
   Future<bool> reduceDutchPrice(num newPrice, {int? offerDurationSec}) async {
     if (session.value == null) return false;
+    if (!_ensureControl(TKeys.actReducePrice.tr)) return false;
     try {
       final result = await _api.reduceDutchPrice(
         streamId: streamId,
@@ -1298,6 +1894,9 @@ class AuctionRoomController extends GetxController {
   /// Entering the room never triggers this; the seller must tap Go Live.
   Future<void> startGoLive() async {
     if (goLiveLoading.value) return;
+    // A role switch is still bringing this device's camera up; joining now
+    // would publish before there is anything to capture.
+    if (mediaRoleSwitching.value) return;
     final s = stream;
     if (s == null || s.isTerminal) return;
     // Publishing is a control action — a secondary device must be granted
@@ -1396,6 +1995,64 @@ class AuctionRoomController extends GetxController {
       return false;
     } finally {
       announcementSaving.value = false;
+    }
+  }
+
+  // ── Show notes (stream description) ────────────────────────────────────────
+
+  /// Takes the show notes from a snapshot, but only when the payload actually
+  /// carried `description` — a frame that is silent about it leaves the notes
+  /// the seller can see standing.
+  void _syncShowNotes(AuctionRoomSnapshot incoming) {
+    final streamJson = incoming.raw['stream'];
+    if (streamJson is! Map || !streamJson.containsKey('description')) return;
+    final text = incoming.stream.description?.trim();
+    showNotes.value = (text == null || text.isEmpty) ? null : text;
+  }
+
+  /// Whether the notes can still be written.
+  ///
+  /// Only while the stream is scheduled: they are what buyers read to decide
+  /// whether to join, so rewriting them mid-stream would move the pitch under
+  /// buyers who are already bidding on the strength of it. Once it is running
+  /// the notes are read-only, for the seller as well as for buyers.
+  bool get canEditShowNotes => stream?.isScheduled ?? false;
+
+  /// Saves [content] as the stream's description. Blank text clears the notes,
+  /// which is a legitimate edit here (unlike the announcement banner), so it is
+  /// sent through rather than rejected.
+  ///
+  /// Refused once the stream is live — see [canEditShowNotes]. The UI hides the
+  /// editor then, so this is the backstop for a stream that goes live while the
+  /// sheet is open.
+  Future<bool> saveShowNotes(String content) async {
+    if (showNotesSaving.value) return false;
+    if (!canEditShowNotes) {
+      _showError('Show notes can only be edited before the stream goes live.');
+      return false;
+    }
+    final text = content.trim();
+    showNotesSaving.value = true;
+    try {
+      await _api.updateShowNotes(
+        streamId,
+        title: stream?.title ?? '',
+        description: text,
+      );
+      // Show it straight away; the refresh below reconciles with the server.
+      showNotes.value = text.isEmpty ? null : text;
+      unawaited(refreshSnapshot());
+      _showInfo(text.isEmpty ? 'Show notes cleared.' : 'Show notes updated.');
+      return true;
+    } on AuctionApiException catch (e) {
+      _showError(_friendly(e));
+      return false;
+    } catch (e) {
+      log('saveShowNotes error: $e');
+      _showError('Network error. Please try again.');
+      return false;
+    } finally {
+      showNotesSaving.value = false;
     }
   }
 
@@ -1611,6 +2268,10 @@ class AuctionRoomController extends GetxController {
       if (wasPrimary && !isPrimary) {
         _showInfo('Another device is now the main device for this stream.');
       }
+      // Control moving is what decides which camera this device shows and
+      // whether it may touch the auction at all — swap the engine over to
+      // match. Fire-and-forget: the switch is queued and self-serialising.
+      if (holdsControl != s.isAuctionController) unawaited(_applyMediaRole());
     }
   }
 
@@ -1981,6 +2642,10 @@ class AuctionRoomController extends GetxController {
   }) async {
     final s = session.value;
     if (s == null || creatingRandomProduct.value) return false;
+    // Checked before the upload, not after: this creates the product and then
+    // queues it, and a watcher refused at the enqueue would have paid for an
+    // image upload and be left with a stray catalog entry.
+    if (!_ensureControl(TKeys.actManageQueue.tr)) return false;
 
     creatingRandomProduct.value = true;
     String? productId;

@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import '../../controllers/auth_controller.dart';
 import '../../controllers/profile_controller.dart';
 import '../../core/config/get_or_put.dart';
+import '../../core/config/session_scope.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
 import '../../features/notifications/application/push_notification_service.dart';
@@ -43,16 +44,16 @@ Future<void> runSellerGate(BuildContext context) async {
   }
 }
 
-/// Navigates to Home, ensuring the seller profile is loaded first. The
-/// profile API is called here on login: if the controller already exists
-/// (e.g. after a previous logout), it's refreshed; otherwise creating it
-/// triggers its initial fetch.
+/// Navigates to Home, ensuring the seller profile is loaded first.
+///
+/// Signing out clears the per-account controllers, but a session can also end
+/// without `logout()` running — an expired or revoked token, or a non-seller
+/// bounced off the gate. Clearing again here means whoever just signed in
+/// never inherits the previous account's controllers, whichever way the last
+/// session ended. It's a no-op on a cold start.
 void goHome(BuildContext context) {
-  if (Get.isRegistered<ProfileController>()) {
-    Get.find<ProfileController>().fetchProfile();
-  } else {
-    getOrPut(() => ProfileController());
-  }
+  resetSessionControllers();
+  getOrPut(() => ProfileController());
 
   // Post-login notification setup: asks for permission (a no-op prompt if the
   // splash already secured it) and registers this handset's FCM token against

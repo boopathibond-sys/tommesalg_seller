@@ -426,7 +426,7 @@ class _UpcEntryRow extends StatelessWidget {
                     ),
                   )
                 : CustomText(
-                    TKeys.thrownLabel.tr,
+                    TKeys.addAction.tr,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: AppColors.white,

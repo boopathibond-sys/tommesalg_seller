@@ -16,7 +16,12 @@ import '../../core/localization/translation_keys.dart';
 ///
 /// Lists `GET /api/notifications` with the three slices the API exposes (all /
 /// unread / archived), cursor pagination, pull-to-refresh, per-row read /
-/// unread / archive, and the two bulk actions (read-all, archive-all).
+/// unread / archive / unarchive, and the bulk actions: read-all, archive-all
+/// and unarchive-all.
+///
+/// Long-pressing a row enters selection mode — tick several rows and archive or
+/// unarchive them in one `POST /bulk` call (100 ids max, which is the API's own
+/// ceiling).
 ///
 /// Tapping a row marks it read and routes it exactly where its original push
 /// would have — see [NotificationRouter].
@@ -31,6 +36,16 @@ class _NotificationsViewState extends State<NotificationsView> {
   late final NotificationController _ctrl =
       getOrPut(() => NotificationController(), permanent: true);
   final ScrollController _scrollCtrl = ScrollController();
+
+  /// `POST /bulk` accepts at most 100 ids, so the selection is capped at the
+  /// same number rather than letting the seller build a batch the API rejects.
+  static const int _selectionLimit = 100;
+
+  /// Ids ticked in selection mode. Non-empty implies selection mode is on.
+  final Set<String> _selected = <String>{};
+  bool _selectionMode = false;
+
+  bool get _inArchive => _ctrl.filter == NotificationFilter.archived;
 
   @override
   void initState() {
@@ -60,6 +75,75 @@ class _NotificationsViewState extends State<NotificationsView> {
   Future<void> _refresh() async {
     await _ctrl.fetchNotifications();
     await _ctrl.fetchUnreadCount();
+  }
+
+  // ── Selection mode ────────────────────────────────────────────────────
+
+  /// Long-press on a row turns selection on and ticks that row.
+  void _startSelection(String id) {
+    setState(() {
+      _selectionMode = true;
+      _selected
+        ..clear()
+        ..add(id);
+    });
+  }
+
+  /// Tap while selecting ticks / unticks. Emptying the selection leaves the
+  /// mode — otherwise the seller is stuck in a bar with nothing to act on.
+  void _toggleSelected(String id) {
+    setState(() {
+      if (_selected.remove(id)) {
+        if (_selected.isEmpty) _selectionMode = false;
+        return;
+      }
+      if (_selected.length >= _selectionLimit) {
+        _toast(TKeys.ntSelectLimit.tr);
+        return;
+      }
+      _selected.add(id);
+    });
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selected.clear();
+    });
+  }
+
+  /// Ticks every row currently loaded, up to the API's 100-id ceiling. Rows
+  /// still behind the cursor are not selected — say so rather than silently
+  /// acting on a subset.
+  void _selectAllLoaded() {
+    final ids = _ctrl.notifications.map((n) => n.id).toList();
+    final capped = ids.length > _selectionLimit;
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(capped ? ids.take(_selectionLimit) : ids);
+      _selectionMode = _selected.isNotEmpty;
+    });
+    if (capped) _toast(TKeys.ntSelectLimit.tr);
+  }
+
+  /// Runs `POST /bulk` over the ticked ids. [action] is `archive` or
+  /// `restore`; the controller reloads the slice and re-syncs the badge.
+  Future<void> _applyToSelection(String action) async {
+    if (_selected.isEmpty) {
+      _toast(TKeys.ntNothingSelected.tr);
+      return;
+    }
+    final ids = _selected.toList();
+    final ok = await _ctrl.bulk(ids: ids, action: action);
+    if (!mounted) return;
+    _exitSelection();
+    _toast(ok
+        ? (action == 'restore'
+                ? TKeys.ntSelectionMoved
+                : TKeys.ntSelectionArchived)
+            .trParams({'count': '${ids.length}'})
+        : (_ctrl.errorMessage ?? TKeys.authSomethingWrong.tr));
   }
 
   /// Row tap: mark read first (so the list settles before we leave), then
@@ -99,7 +183,44 @@ class _NotificationsViewState extends State<NotificationsView> {
         : (_ctrl.errorMessage ?? TKeys.authSomethingWrong.tr));
   }
 
-  Future<bool> _confirmArchiveAll() async {
+  Future<void> _unarchiveRow(NotificationModel row) async {
+    final ok = await _ctrl.unarchive(row.id);
+    if (!mounted) return;
+    _toast(ok
+        ? TKeys.ntMovedToInbox.tr
+        : (_ctrl.errorMessage ?? TKeys.authSomethingWrong.tr));
+  }
+
+  /// "Move all to inbox" — the archive has no `restore-all` route, so the
+  /// controller walks it a page at a time. Confirmed first, like archive-all.
+  Future<void> _unarchiveAll() async {
+    final confirmed = await _confirmBulk(
+      title: TKeys.ntUnarchiveAll.tr,
+      body: TKeys.ntUnarchiveAllBody.tr,
+      confirmLabel: TKeys.ntUnarchive.tr,
+      confirmColor: AppColors.brandNavy,
+    );
+    if (!confirmed) return;
+    final ok = await _ctrl.unarchiveAll();
+    if (!mounted) return;
+    _toast(ok
+        ? TKeys.ntAllUnarchived.tr
+        : (_ctrl.errorMessage ?? TKeys.authSomethingWrong.tr));
+  }
+
+  Future<bool> _confirmArchiveAll() => _confirmBulk(
+        title: TKeys.ntArchiveAll.tr,
+        body: TKeys.ntArchiveAllBody.tr,
+        confirmLabel: TKeys.ntArchive.tr,
+        confirmColor: AppColors.vipps,
+      );
+
+  Future<bool> _confirmBulk({
+    required String title,
+    required String body,
+    required String confirmLabel,
+    required Color confirmColor,
+  }) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -107,13 +228,13 @@ class _NotificationsViewState extends State<NotificationsView> {
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: CustomText(
-          TKeys.ntArchiveAll.tr,
+          title,
           fontSize: 17,
           fontWeight: FontWeight.w800,
           color: AppColors.brandNavy,
         ),
         content: CustomText(
-          TKeys.ntArchiveAllBody.tr,
+          body,
           fontSize: 13.5,
           fontWeight: FontWeight.w500,
           height: 1.4,
@@ -132,10 +253,10 @@ class _NotificationsViewState extends State<NotificationsView> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: CustomText(
-              TKeys.ntArchive.tr,
+              confirmLabel,
               fontSize: 13.5,
               fontWeight: FontWeight.w800,
-              color: AppColors.vipps,
+              color: confirmColor,
             ),
           ),
         ],
@@ -172,13 +293,29 @@ class _NotificationsViewState extends State<NotificationsView> {
         bottom: false,
         child: Column(
           children: [
-            _TopBar(
-              onBack: () => Navigator.of(context).maybePop(),
-              controller: _ctrl,
-              onMarkAllRead: _markAllRead,
-              onArchiveAll: _archiveAll,
-            ),
-            _FilterBar(controller: _ctrl),
+            // The selection bar replaces the whole header while rows are
+            // ticked: the filter bar goes with it, so a slice can't change
+            // underneath a selection that was made in another one.
+            if (_selectionMode)
+              Obx(() => _SelectionBar(
+                    count: _selected.length,
+                    busy: _ctrl.isMutating,
+                    inArchive: _inArchive,
+                    onClose: _exitSelection,
+                    onSelectAll: _selectAllLoaded,
+                    onArchive: () => _applyToSelection('archive'),
+                    onUnarchive: () => _applyToSelection('restore'),
+                  ))
+            else ...[
+              _TopBar(
+                onBack: () => Navigator.of(context).maybePop(),
+                controller: _ctrl,
+                onMarkAllRead: _markAllRead,
+                onArchiveAll: _archiveAll,
+                onUnarchiveAll: _unarchiveAll,
+              ),
+              _FilterBar(controller: _ctrl),
+            ],
             Expanded(
               child: Obx(() {
                 final rows    = _ctrl.notifications;
@@ -225,15 +362,28 @@ class _NotificationsViewState extends State<NotificationsView> {
                         );
                       }
                       final row = rows[i];
+                      // A row counts as archived when it carries the flag *or*
+                      // when the archive slice is on screen — the list endpoint
+                      // doesn't always echo `archivedAt` back.
+                      final archived = row.isArchived || _ctrl.filter ==
+                          NotificationFilter.archived;
                       return _NotificationCard(
                         row       : row,
-                        onTap     : () => _openRow(row),
+                        selectionMode: _selectionMode,
+                        selected  : _selected.contains(row.id),
+                        onLongPress: () => _startSelection(row.id),
+                        onTap     : _selectionMode
+                            ? () => _toggleSelected(row.id)
+                            : () => _openRow(row),
                         onToggleRead: () => row.isRead
                             ? _ctrl.markUnread(row.id)
                             : _ctrl.markRead(row.id),
-                        onArchive : row.isArchived
+                        onArchive : archived
                             ? null
                             : () => _ctrl.archive(row.id),
+                        onUnarchive: archived
+                            ? () => _unarchiveRow(row)
+                            : null,
                       );
                     },
                   ),
@@ -256,12 +406,14 @@ class _TopBar extends StatelessWidget {
     required this.controller,
     required this.onMarkAllRead,
     required this.onArchiveAll,
+    required this.onUnarchiveAll,
   });
 
   final VoidCallback onBack;
   final NotificationController controller;
   final VoidCallback onMarkAllRead;
   final VoidCallback onArchiveAll;
+  final VoidCallback onUnarchiveAll;
 
   @override
   Widget build(BuildContext context) {
@@ -288,13 +440,22 @@ class _TopBar extends StatelessWidget {
               child: _CountChip(count: unread),
             );
           }),
-          Obx(() => _BulkMenu(
-                busy         : controller.isMutating,
-                canReadAll   : controller.unreadCount > 0,
-                canArchiveAll: controller.filter != NotificationFilter.archived,
-                onMarkAllRead: onMarkAllRead,
-                onArchiveAll : onArchiveAll,
-              )),
+          Obx(() {
+            final inArchive =
+                controller.filter == NotificationFilter.archived;
+            return _BulkMenu(
+              busy           : controller.isMutating,
+              canReadAll     : controller.unreadCount > 0,
+              // Archive-all empties the inbox, so it is meaningless inside the
+              // archive — and unarchive-all is meaningless outside it. Exactly
+              // one of the two is ever live.
+              canArchiveAll  : !inArchive,
+              canUnarchiveAll: inArchive,
+              onMarkAllRead  : onMarkAllRead,
+              onArchiveAll   : onArchiveAll,
+              onUnarchiveAll : onUnarchiveAll,
+            );
+          }),
         ],
       ),
     );
@@ -358,22 +519,26 @@ class _CountChip extends StatelessWidget {
   }
 }
 
-/// Overflow menu carrying the two bulk endpoints. Shows a spinner in place of
-/// the icon while one is in flight so a second tap can't stack calls.
+/// Overflow menu carrying the bulk actions. Shows a spinner in place of the
+/// icon while one is in flight so a second tap can't stack calls.
 class _BulkMenu extends StatelessWidget {
   const _BulkMenu({
     required this.busy,
     required this.canReadAll,
     required this.canArchiveAll,
+    required this.canUnarchiveAll,
     required this.onMarkAllRead,
     required this.onArchiveAll,
+    required this.onUnarchiveAll,
   });
 
   final bool busy;
   final bool canReadAll;
   final bool canArchiveAll;
+  final bool canUnarchiveAll;
   final VoidCallback onMarkAllRead;
   final VoidCallback onArchiveAll;
+  final VoidCallback onUnarchiveAll;
 
   @override
   Widget build(BuildContext context) {
@@ -405,6 +570,7 @@ class _BulkMenu extends StatelessWidget {
       onSelected: (value) {
         if (value == 'read-all') onMarkAllRead();
         if (value == 'archive-all') onArchiveAll();
+        if (value == 'unarchive-all') onUnarchiveAll();
       },
       itemBuilder: (_) => [
         PopupMenuItem(
@@ -416,16 +582,167 @@ class _BulkMenu extends StatelessWidget {
             muted: !canReadAll,
           ),
         ),
-        PopupMenuItem(
-          value: 'archive-all',
-          enabled: canArchiveAll,
-          child: _MenuRow(
-            icon: Icons.archive_outlined,
-            label: TKeys.ntArchiveAll.tr,
-            muted: !canArchiveAll,
+        if (canUnarchiveAll)
+          PopupMenuItem(
+            value: 'unarchive-all',
+            child: _MenuRow(
+              icon: Icons.unarchive_outlined,
+              label: TKeys.ntUnarchiveAll.tr,
+            ),
+          )
+        else
+          PopupMenuItem(
+            value: 'archive-all',
+            enabled: canArchiveAll,
+            child: _MenuRow(
+              icon: Icons.archive_outlined,
+              label: TKeys.ntArchiveAll.tr,
+              muted: !canArchiveAll,
+            ),
           ),
-        ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Selection bar — replaces the header while rows are ticked.
+//
+// Navy so the screen reads as being in a different mode, with the count in the
+// middle and exactly one destructive-ish action on the right: unarchive inside
+// the archive, archive everywhere else.
+// ─────────────────────────────────────────────────────────────────────────────
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({
+    required this.count,
+    required this.busy,
+    required this.inArchive,
+    required this.onClose,
+    required this.onSelectAll,
+    required this.onArchive,
+    required this.onUnarchive,
+  });
+
+  final int count;
+  final bool busy;
+  final bool inArchive;
+  final VoidCallback onClose;
+  final VoidCallback onSelectAll;
+  final VoidCallback onArchive;
+  final VoidCallback onUnarchive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+      padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: AppColors.brandNavy,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            blurRadius: 14,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: busy ? null : onClose,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(
+              Icons.close_rounded,
+              size: 20,
+              color: AppColors.brandYellow,
+            ),
+          ),
+          Expanded(
+            child: CustomText(
+              TKeys.ntSelectedCount.trParams({'count': '$count'}),
+              fontSize: 14.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
+              color: AppColors.white,
+            ),
+          ),
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: AppColors.brandYellow,
+                ),
+              ),
+            )
+          else ...[
+            TextButton(
+              onPressed: onSelectAll,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              child: CustomText(
+                TKeys.ntSelectAll.tr,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: AppColors.brandYellow,
+              ),
+            ),
+            _SelectionAction(
+              icon: inArchive
+                  ? Icons.unarchive_rounded
+                  : Icons.archive_rounded,
+              label: inArchive ? TKeys.ntUnarchive.tr : TKeys.ntArchive.tr,
+              onTap: inArchive ? onUnarchive : onArchive,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The filled yellow pill carrying the selection's one action.
+class _SelectionAction extends StatelessWidget {
+  const _SelectionAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.brandYellow,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppColors.brandNavy),
+            const SizedBox(width: 6),
+            CustomText(
+              label,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+              color: AppColors.brandNavy,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -745,36 +1062,56 @@ class _CategoryMenuRow extends StatelessWidget {
 // geometry and simply lose the rail and drop a weight, so a half-read list
 // still scans as one column.
 //
-// Swipe left archives (outside the archive slice); the ⋮ menu carries the same
-// action plus read / unread.
+// Swipe left archives, or — inside the archive slice — moves the row back to
+// the inbox; the ⋮ menu carries the same action plus read / unread. While
+// selection mode is on the swipe is off and the menu becomes a tick.
 // ─────────────────────────────────────────────────────────────────────────────
 class _NotificationCard extends StatelessWidget {
   const _NotificationCard({
     required this.row,
     required this.onTap,
     required this.onToggleRead,
+    required this.onLongPress,
     this.onArchive,
+    this.onUnarchive,
+    this.selectionMode = false,
+    this.selected = false,
   });
 
   final NotificationModel row;
   final VoidCallback onTap;
   final VoidCallback onToggleRead;
+
+  /// Long-press turns on selection mode with this row ticked.
+  final VoidCallback onLongPress;
+
+  /// Archive this row. Null once it is already archived — [onUnarchive] is
+  /// set instead, and the two are never both live.
   final VoidCallback? onArchive;
+  final VoidCallback? onUnarchive;
+
+  final bool selectionMode;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final card = _buildCard(context);
-    if (onArchive == null) return card;
 
+    // Swiping while selecting would fight the tick, so the gesture is off in
+    // selection mode.
+    final swipeAction = selectionMode ? null : (onArchive ?? onUnarchive);
+    if (swipeAction == null) return card;
+
+    final restoring = onArchive == null;
     return Dismissible(
       key: ValueKey('notification-${row.id}'),
       direction: DismissDirection.endToStart,
-      background: const _SwipeBackground(),
+      background: _SwipeBackground(restoring: restoring),
       // The controller removes the row itself (and puts it back if the call
       // fails), so the widget is never dismissed by the framework — that keeps
       // the list and the model from disagreeing about what exists.
       confirmDismiss: (_) async {
-        onArchive!.call();
+        swipeAction.call();
         return false;
       },
       child: card,
@@ -793,13 +1130,17 @@ class _NotificationCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: selected
+            ? AppColors.brandYellow.withValues(alpha: 0.16)
+            : AppColors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: unread
-              ? AppColors.brandNavy.withValues(alpha: 0.16)
-              : AppColors.brandNavy.withValues(alpha: 0.09),
-          width: 1.1,
+          color: selected
+              ? AppColors.brandNavy
+              : unread
+                  ? AppColors.brandNavy.withValues(alpha: 0.16)
+                  : AppColors.brandNavy.withValues(alpha: 0.09),
+          width: selected ? 1.6 : 1.1,
         ),
         boxShadow: [
           // Unread rows sit a little higher off the page.
@@ -818,6 +1159,7 @@ class _NotificationCard extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
+            onLongPress: selectionMode ? null : onLongPress,
             splashColor: AppColors.brandNavy.withValues(alpha: 0.06),
             highlightColor: AppColors.brandNavy.withValues(alpha: 0.03),
             // Stack, not a Row with a stretched first child: inside a ListView
@@ -933,11 +1275,15 @@ class _NotificationCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      _RowMenu(
-                        isRead: row.isRead,
-                        onToggleRead: onToggleRead,
-                        onArchive: onArchive,
-                      ),
+                      if (selectionMode)
+                        _SelectionTick(selected: selected)
+                      else
+                        _RowMenu(
+                          isRead: row.isRead,
+                          onToggleRead: onToggleRead,
+                          onArchive: onArchive,
+                          onUnarchive: onUnarchive,
+                        ),
                     ],
                   ),
                 ),
@@ -963,11 +1309,13 @@ class _RowMenu extends StatelessWidget {
     required this.isRead,
     required this.onToggleRead,
     this.onArchive,
+    this.onUnarchive,
   });
 
   final bool isRead;
   final VoidCallback onToggleRead;
   final VoidCallback? onArchive;
+  final VoidCallback? onUnarchive;
 
   @override
   Widget build(BuildContext context) {
@@ -983,6 +1331,7 @@ class _RowMenu extends StatelessWidget {
       onSelected: (value) {
         if (value == 'read') onToggleRead();
         if (value == 'archive') onArchive?.call();
+        if (value == 'unarchive') onUnarchive?.call();
       },
       itemBuilder: (_) => [
         PopupMenuItem(
@@ -1002,13 +1351,25 @@ class _RowMenu extends StatelessWidget {
               label: TKeys.ntArchive.tr,
             ),
           ),
+        if (onUnarchive != null)
+          PopupMenuItem(
+            value: 'unarchive',
+            child: _MenuRow(
+              icon: Icons.unarchive_outlined,
+              label: TKeys.ntUnarchive.tr,
+            ),
+          ),
       ],
     );
   }
 }
 
 class _SwipeBackground extends StatelessWidget {
-  const _SwipeBackground();
+  const _SwipeBackground({this.restoring = false});
+
+  /// True in the archive, where the same swipe moves the row back to the inbox
+  /// instead of archiving it.
+  final bool restoring;
 
   @override
   Widget build(BuildContext context) {
@@ -1022,16 +1383,52 @@ class _SwipeBackground extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.archive_rounded, size: 18, color: AppColors.brandYellow),
+          Icon(
+            restoring ? Icons.unarchive_rounded : Icons.archive_rounded,
+            size: 18,
+            color: AppColors.brandYellow,
+          ),
           const SizedBox(width: 8),
           CustomText(
-            TKeys.ntArchive.tr,
+            restoring ? TKeys.ntUnarchive.tr : TKeys.ntArchive.tr,
             fontSize: 12.5,
             fontWeight: FontWeight.w900,
             letterSpacing: 0.3,
             color: AppColors.brandYellow,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The tick that replaces the row's ⋮ menu while selecting.
+class _SelectionTick extends StatelessWidget {
+  const _SelectionTick({required this.selected});
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12, top: 2),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.brandNavy : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: selected
+                ? AppColors.brandNavy
+                : AppColors.brandNavy.withValues(alpha: 0.30),
+            width: 1.6,
+          ),
+        ),
+        child: selected
+            ? const Icon(Icons.check_rounded,
+                size: 15, color: AppColors.brandYellow)
+            : null,
       ),
     );
   }

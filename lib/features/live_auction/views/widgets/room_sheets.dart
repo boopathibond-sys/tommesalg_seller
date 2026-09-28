@@ -4,10 +4,13 @@ import 'package:get/get.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/custom_text.dart';
 import '../../controllers/auction_room_controller.dart';
+import '../../data/models/live_chat_message.dart';
 import '../../data/models/pre_bid.dart';
 import '../../data/models/session_device.dart';
 import '../media_push_view.dart';
+import '../tabs/orders_tab.dart';
 import 'camera_selector_sheet.dart';
+import 'report_sheet.dart';
 import '../../../../core/localization/translation_keys.dart';
 
 String _kr(num? v) => v == null ? '—' : 'kr ${v % 1 == 0 ? v.toInt() : v}';
@@ -20,10 +23,18 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.white,
+    // Scroll-controlled + scrollable body: the list runs to nine tiles on a
+    // live stream, which overflowed the default half-screen sheet on a short
+    // phone. It still opens only as tall as its content.
+    isScrollControlled: true,
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+    ),
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (sctx) => SafeArea(
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 10),
@@ -39,21 +50,29 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
               showDevicesSheet(context, ctrl);
             },
           ),
+          // Lens picker. Only the device that captures can choose a lens — a
+          // watcher is showing another phone's picture, so it has none to pick.
+          if (ctrl.isController)
+            _Tile(
+              icon: Icons.cameraswitch_rounded,
+              label: TKeys.cameraSource.tr,
+              subtitle: ctrl.selectedCamera.value?.label,
+              onTap: () {
+                Navigator.of(sctx).pop();
+                showCameraSelectorSheet(context, ctrl);
+              },
+            ),
+          // Orders used to be a bottom-nav tab. The nav came off so the camera
+          // could own the screen, so the stream's orders open as their own
+          // page from here — the seller reads them between lots and comes back
+          // to the broadcast with the back arrow.
           _Tile(
             icon: Icons.receipt_long_rounded,
-            label: TKeys.ordersLabel.tr,
+            label: TKeys.rsStreamOrders.tr,
+            subtitle: _ordersSubtitle(ctrl),
             onTap: () {
               Navigator.of(sctx).pop();
-              showOrdersSheet(context, ctrl);
-            },
-          ),
-          _Tile(
-            icon: Icons.camera_alt_rounded,
-            label: TKeys.cameraSource.tr,
-            subtitle: _cameraSubtitle(ctrl),
-            onTap: () {
-              Navigator.of(sctx).pop();
-              showCameraSelectorSheet(context, ctrl);
+              openStreamOrders(context, ctrl);
             },
           ),
           _Tile(
@@ -67,6 +86,44 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
                   builder: (_) => MediaPushView(room: ctrl),
                 ),
               );
+            },
+          ),
+          // Chat lives on the Live tab as an overlay now, so its two room-wide
+          // switches belong here — the overlay itself has nowhere to put them.
+          _Tile(
+            icon: ctrl.chatDisabled
+                ? Icons.chat_bubble_outline_rounded
+                : Icons.do_not_disturb_on_outlined,
+            label: ctrl.chatDisabled
+                ? TKeys.ctEnableChat.tr
+                : TKeys.ctDisableChat.tr,
+            subtitle:
+                ctrl.chatDisabled ? TKeys.ctChatDisabled.tr : TKeys.ctChatOn.tr,
+            onTap: () async {
+              final disabling = !ctrl.chatDisabled;
+              Navigator.of(sctx).pop();
+              final ok = await _confirm(
+                context,
+                disabling
+                    ? TKeys.ctDisableChatTitle.tr
+                    : TKeys.ctEnableChatTitle.tr,
+                disabling
+                    ? TKeys.ctDisableChatBody.tr
+                    : TKeys.ctEnableChatBody.tr,
+                disabling ? TKeys.ctDisable.tr : TKeys.ctEnable.tr,
+              );
+              if (ok) await ctrl.toggleChatEnabled();
+            },
+          ),
+          _Tile(
+            icon: Icons.clear_all_rounded,
+            label: TKeys.ctClearChat.tr,
+            onTap: () async {
+              Navigator.of(sctx).pop();
+              if (await _confirm(context, TKeys.ctClearChatTitle.tr,
+                  TKeys.ctClearChatBody.tr, TKeys.ctClear.tr)) {
+                await ctrl.clearChat();
+              }
             },
           ),
           _Tile(
@@ -87,34 +144,41 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
               showExtendDialog(context, ctrl);
             },
           ),
-          const Divider(height: 8),
-          _Tile(
-            icon: Icons.stop_circle_outlined,
-            label: TKeys.rsEndStream.tr,
-            color: AppColors.vipps,
-            onTap: () async {
-              Navigator.of(sctx).pop();
-              if (await _confirm(context, TKeys.rsEndStreamTitle.tr,
-                  TKeys.rsEndStreamBody.tr, TKeys.rsEnd.tr)) {
-                await ctrl.endStream();
-              }
-            },
-          ),
+          // Ending the stream is control-gated (see [endStream]). Offered only
+          // to the device that can actually do it — a watcher would otherwise
+          // confirm a destructive action and then be refused.
+          if (ctrl.isController) ...[
+            const Divider(height: 8),
+            _Tile(
+              icon: Icons.stop_circle_outlined,
+              label: TKeys.rsEndStream.tr,
+              color: AppColors.vipps,
+              onTap: () async {
+                Navigator.of(sctx).pop();
+                if (await _confirm(context, TKeys.rsEndStreamTitle.tr,
+                    TKeys.rsEndStreamBody.tr, TKeys.rsEnd.tr)) {
+                  await ctrl.endStream();
+                }
+              },
+            ),
+          ],
           const SizedBox(height: 8),
         ],
+        ),
       ),
     ),
   );
 }
 
-/// Sub-line for the Camera tile — the lens currently capturing, so the seller
-/// can see what they are on without opening the picker.
-String _cameraSubtitle(AuctionRoomController ctrl) {
-  final selected = ctrl.selectedCamera.value;
-  if (selected != null) return selected.label;
-  return ctrl.cameraOptions.isEmpty
-      ? TKeys.csDetecting.tr
-      : TKeys.csDeviceDefault.tr;
+/// Sub-line for the Orders tile — the count the seller would otherwise have to
+/// open the sheet to see.
+///
+/// Only when there is something to count. Orders are fetched by the sheet, not
+/// by the room, so an empty list here means "not loaded yet" just as often as
+/// it means "none sold" — and the tile says nothing rather than claiming zero.
+String? _ordersSubtitle(AuctionRoomController ctrl) {
+  final count = ctrl.orders.length;
+  return count == 0 ? null : '$count ${TKeys.ordersLabel.tr.toLowerCase()}';
 }
 
 /// Sub-line for the Media Push tile — what the seller can expect to do on the
@@ -144,6 +208,376 @@ String? _endsAtSubtitle(AuctionRoomController ctrl) {
   return planned == null
       ? null
       : TKeys.rsPlannedLength.trParams({'count': '$planned'});
+}
+
+// ── Show notes ───────────────────────────────────────────────────────────────
+
+/// Path to the sticky-note art the room's Show Notes tab is drawn from.
+const String kShowNotesAsset = 'assets/logo/show_notes_tab.png';
+
+/// Opens the Show Notes — as an editor before the stream starts, and as a
+/// reader once it is running.
+///
+/// The notes are what buyers read about the show, so they are settled while it
+/// is still scheduled: rewriting them mid-stream would change the pitch under
+/// buyers who already read it and are bidding on the strength of it. Live, the
+/// seller can still pull them up to see what was promised — hence two
+/// presentations of the same text.
+///
+/// Both edit `stream.description`, exactly what buyers open as "Show Notes" in
+/// their room, so anything already written arrives in the field and the seller
+/// adds to it rather than starting over.
+Future<void> showShowNotesDialog(
+  BuildContext context,
+  AuctionRoomController ctrl, {
+  double? anchorBottom,
+}) {
+  if (!ctrl.canEditShowNotes) {
+    return showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.72),
+      builder: (_) => _ShowNotesViewer(ctrl: ctrl, anchorBottom: anchorBottom),
+    );
+  }
+  return showDialog<void>(
+    context: context,
+    barrierColor: Colors.black.withOpacity(0.72),
+    builder: (_) => _ShowNotesDialog(ctrl: ctrl),
+  );
+}
+
+/// The read-only Show Notes, shown once the stream is running: a black panel
+/// that drops out of the note tab, dismissed by the ✕ or a tap outside.
+///
+/// It hangs from [anchorBottom] rather than sitting centred, so it reads as the
+/// note opening rather than as a new screen, and it takes only the height its
+/// text needs — a two-line note gets a two-line panel.
+///
+/// Black rather than the editor's white: the room behind it is a live camera,
+/// and a sheet of paper over the feed reads as a screen change rather than an
+/// overlay the seller is holding open for a moment.
+class _ShowNotesViewer extends StatelessWidget {
+  const _ShowNotesViewer({required this.ctrl, this.anchorBottom});
+  final AuctionRoomController ctrl;
+
+  /// Screen y of the note tab's bottom edge. Null when the tab could not be
+  /// measured (or the panel was opened from the ⋮ sheet, which has no note to
+  /// hang from) — it falls back to a sensible inset under the header.
+  final double? anchorBottom;
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = ctrl.showNotes.value;
+    final media = MediaQuery.of(context);
+    final top = (anchorBottom ?? (media.padding.top + 110)) + 8;
+    // Whatever is left below the note, less a margin — long notes scroll inside
+    // the panel instead of running off the bottom of the screen.
+    final maxHeight = (media.size.height - top - 24).clamp(120.0, 520.0);
+
+    return Dialog(
+      alignment: Alignment.topCenter,
+      backgroundColor: Colors.black.withOpacity(0.88),
+      insetPadding: EdgeInsets.only(left: 14, right: 14, top: top, bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 12, 16),
+          child: Column(
+            // Height follows the content; the constraint above is only a
+            // ceiling.
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  // No heading beside it: the note art letters "Show Notes"
+                  // itself, and a label next to it only said it twice.
+                  Image.asset(kShowNotesAsset, height: 28),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                        width: 34, height: 34),
+                    icon: const Icon(Icons.close_rounded,
+                        size: 20, color: AppColors.white),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: CustomText(
+                    notes ?? TKeys.snEmptyLive.tr,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.5,
+                    color: notes == null ? AppColors.textMuted : AppColors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Says why there is no field here, so a locked editor doesn't
+              // read as one that failed to load.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.lock_outline_rounded,
+                      size: 13, color: AppColors.textMuted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: CustomText(TKeys.snLockedLive.tr,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                        color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Show Notes editor, shown while the stream is still scheduled: a centred
+/// white card with the current notes in an editable field.
+///
+/// A dialog rather than a bottom sheet because the note tab it grows out of
+/// sits high on the stage, and because the notes are read as a block — a sheet
+/// would pin a long text to the bottom edge behind the keyboard.
+class _ShowNotesDialog extends StatefulWidget {
+  const _ShowNotesDialog({required this.ctrl});
+  final AuctionRoomController ctrl;
+
+  @override
+  State<_ShowNotesDialog> createState() => _ShowNotesDialogState();
+}
+
+class _ShowNotesDialogState extends State<_ShowNotesDialog> {
+  late final TextEditingController _text =
+      TextEditingController(text: widget.ctrl.showNotes.value ?? '');
+
+  /// What was on screen when the dialog opened — the Update button stays off
+  /// until the seller has actually changed something.
+  late final String _initial = _text.text.trim();
+
+  AuctionRoomController get ctrl => widget.ctrl;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    FocusScope.of(context).unfocus();
+    if (await ctrl.saveShowNotes(_text.text) && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final fieldHeight = (media.size.height * 0.2).clamp(120.0, 260.0);
+    final existing = ctrl.showNotes.value;
+
+    return Dialog(
+      backgroundColor: AppColors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: Padding(
+        // Lift the card clear of the keyboard while typing.
+        padding: EdgeInsets.only(bottom: media.viewInsets.bottom * 0.2),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  // No heading beside it: the note art letters "Show Notes"
+                  // itself. The sub-line stays — it says what the notes are
+                  // for, which the art does not.
+                  Image.asset(kShowNotesAsset, height: 30),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: CustomText(TKeys.snSubtitle.tr,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded,
+                        size: 20, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Nothing written yet: say so, so the empty field doesn't read as
+              // notes that failed to load.
+              if (existing == null) ...[
+                CustomText(TKeys.snEmpty.tr,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                    height: 1.35,
+                    color: AppColors.textSecondary),
+                const SizedBox(height: 12),
+              ],
+              SizedBox(
+                height: fieldHeight,
+                child: TextField(
+                  controller: _text,
+                  autofocus: existing == null,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  keyboardType: TextInputType.multiline,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                    color: AppColors.textPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: TKeys.snHint.tr,
+                    hintStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textMuted,
+                    ),
+                    filled: true,
+                    fillColor: AppColors.inputFill,
+                    contentPadding: const EdgeInsets.all(14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: AppColors.inputBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: AppColors.inputBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                          color: AppColors.brandNavy, width: 1.4),
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Obx(() {
+                final busy = ctrl.showNotesSaving.value;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: _SheetButton(
+                        label: TKeys.snCancel.tr,
+                        filled: false,
+                        enabled: !busy,
+                        onTap: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _SheetButton(
+                        label:
+                            existing == null ? TKeys.snAdd.tr : TKeys.snUpdate.tr,
+                        loading: busy,
+                        enabled: !busy && _text.text.trim() != _initial,
+                        onTap: _save,
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Chat moderation ──────────────────────────────────────────────────────────
+
+/// Long-press actions on a viewer's chat line: delete it for everyone, mute the
+/// viewer, or report them.
+///
+/// Delete and mute only clean up this room; reporting is what reaches a human
+/// at Tommesalg, which App Review guideline 1.2 requires of an app carrying
+/// user-generated content.
+Future<void> showChatModerationSheet(
+  BuildContext context,
+  AuctionRoomController ctrl,
+  LiveChatMessage m,
+) {
+  final muted = ctrl.isMuted(m.senderId);
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.white,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (sctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: AppColors.borderGrey,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 6),
+          _Tile(
+            icon: Icons.delete_outline_rounded,
+            label: TKeys.ctDeleteMessage.tr,
+            color: AppColors.vipps,
+            onTap: () {
+              Navigator.of(sctx).pop();
+              ctrl.deleteChatMessage(m.id);
+            },
+          ),
+          _Tile(
+            icon: muted ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+            label: muted ? TKeys.ctUnmuteViewer.tr : TKeys.ctMuteViewer.tr,
+            onTap: () {
+              Navigator.of(sctx).pop();
+              if (muted) {
+                ctrl.unmuteUser(m.senderId);
+              } else {
+                ctrl.muteUser(m.senderId);
+              }
+            },
+          ),
+          _Tile(
+            icon: Icons.flag_outlined,
+            label: TKeys.ctReportMessage.tr,
+            onTap: () {
+              Navigator.of(sctx).pop();
+              showReportSheet(
+                context: context,
+                targetType: 'CHAT_MESSAGE',
+                targetId: m.id,
+                reportedUserId: m.senderId,
+                contextId: ctrl.streamId,
+                // Quote the line so the reviewer does not have to dig it out of
+                // the stream log — it may be deleted by then.
+                contentPreview: m.text,
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
 }
 
 // ── Stream announcement ──────────────────────────────────────────────────────
@@ -866,102 +1300,6 @@ class _DeviceRow extends StatelessWidget {
 }
 
 // ── Orders ───────────────────────────────────────────────────────────────────
-
-Future<void> showOrdersSheet(BuildContext context, AuctionRoomController ctrl) {
-  ctrl.loadOrders();
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => DraggableScrollableSheet(
-      initialChildSize: 0.65, minChildSize: 0.4, maxChildSize: 0.92, expand: false,
-      builder: (context, scroll) => Container(
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            _SheetHeader(title: TKeys.rsStreamOrders.tr),
-            Expanded(
-              child: Obx(() {
-                if (ctrl.loadingOrders.value && ctrl.orders.isEmpty) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation(AppColors.brandNavy)),
-                  );
-                }
-                final orders = ctrl.orders;
-                if (orders.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: CustomText(TKeys.rsNoOrdersYetDot.tr,
-                          fontSize: 13, fontWeight: FontWeight.w500,
-                          color: AppColors.textMuted),
-                    ),
-                  );
-                }
-                return ListView.separated(
-                  controller: scroll,
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  itemCount: orders.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) {
-                    final o = orders[i];
-                    return Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.inputBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              width: 44, height: 44, color: AppColors.inputFill,
-                              child: o.image != null
-                                  ? Image.network(o.image!, fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                          Icons.image_outlined, color: AppColors.textMuted))
-                                  : const Icon(Icons.shopping_bag_outlined,
-                                      color: AppColors.textMuted),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                CustomText(o.productTitle ?? TKeys.rsOrder.tr, fontSize: 14,
-                                    fontWeight: FontWeight.w700, color: AppColors.textPrimary,
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                const SizedBox(height: 2),
-                                CustomText(
-                                  '${o.buyerName ?? TKeys.saBuyer.tr}${o.status != null ? ' · ${o.status}' : ''}',
-                                  fontSize: 12, fontWeight: FontWeight.w500,
-                                  color: AppColors.textSecondary,
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
-                              ],
-                            ),
-                          ),
-                          CustomText(_kr(o.amount), fontSize: 14,
-                              fontWeight: FontWeight.w800, color: AppColors.brandNavy),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              }),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
 
 // ── Pre-bids ─────────────────────────────────────────────────────────────────
 

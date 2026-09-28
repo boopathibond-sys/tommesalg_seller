@@ -15,6 +15,53 @@ import '../../data/models/catalog_product.dart';
 import '../widgets/room_sheets.dart';
 import '../../../../core/localization/translation_keys.dart';
 
+/// The queue as its own page, pushed from the circular queue button beside the
+/// Live tab's chat field.
+///
+/// The room lost its bottom nav so the camera could own the whole screen, so
+/// the queue is no longer a sibling tab — it is a route over the stage, with a
+/// back arrow that returns straight to the broadcast. The controller is passed
+/// in (already `Get.put` under the stream tag by the room), so pushing this
+/// never re-creates a session.
+class QueuePage extends StatelessWidget {
+  const QueuePage({super.key, required this.ctrl});
+  final AuctionRoomController ctrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.white,
+        surfaceTintColor: AppColors.white,
+        elevation: 0,
+        leading: IconButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: AppColors.textPrimary),
+        ),
+        title: Obx(() => CustomText(
+              // The count is the reason the seller opened this page, and the
+              // round button in the stream no longer badges it, so the title is
+              // the one place it shows.
+              TKeys.qtProductQueueTitle
+                  .trParams({'count': '${ctrl.queueView.length}'}),
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            )),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: QueueTab(ctrl: ctrl),
+        ),
+      ),
+    );
+  }
+}
+
 /// The Queue tab: ordered product list with add / remove / reorder / clear.
 /// Mutations are snapshot-authoritative — a spinner shows while the server
 /// applies the change; no optimistic reordering.
@@ -33,7 +80,7 @@ class QueueTab extends StatelessWidget {
               child: Obx(() {
                 final canManage = ctrl.canManageQueue;
                 final queue = ctrl.queueView;
-                if (queue.isEmpty) return const _EmptyQueue();
+                if (queue.isEmpty) return _EmptyQueue(canManage: canManage);
                 // Drag-to-reorder: grab the handle on the left and drop the lot
                 // wherever you want; the position is persisted on release.
                 return ReorderableListView.builder(
@@ -82,6 +129,10 @@ class _QueueActions extends StatelessWidget {
         // Queue management (add / clear / reorder / remove) only needs a live
         // session — NOT auction control. Per the V1 API, only Start / End /
         // Dutch-reduce are controller-gated (lib/api_details §2).
+        // Two sellers rearranging one queue from two handsets is how a lot
+        // gets started on the wrong product, so the queue stays with whoever
+        // is running the auction. A watcher is told why and can ask for it.
+        if (!ctrl.isController) return const _QueueLockedNote();
         final canManage = ctrl.canManageQueue;
         return Row(
           children: [
@@ -104,6 +155,36 @@ class _QueueActions extends StatelessWidget {
           ],
         );
       }),
+    );
+  }
+}
+
+/// Replaces the Add / Clear row on a device without auction control: says why
+/// the queue is read-only here, rather than leaving two greyed-out buttons to
+/// be read as a bug.
+class _QueueLockedNote extends StatelessWidget {
+  const _QueueLockedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.inputFill,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_outline_rounded, size: 17, color: AppColors.textMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: CustomText(TKeys.qtQueueLocked.tr,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1201,7 +1282,12 @@ class _ActionButton extends StatelessWidget {
 }
 
 class _EmptyQueue extends StatelessWidget {
-  const _EmptyQueue();
+  const _EmptyQueue({required this.canManage});
+
+  /// Whether this device may fill the queue. A watcher is pointed at the device
+  /// that can, instead of at an "Add product" button it doesn't have.
+  final bool canManage;
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -1215,7 +1301,8 @@ class _EmptyQueue extends StatelessWidget {
             CustomText(TKeys.qtQueueEmpty.tr, fontSize: 16,
                 fontWeight: FontWeight.w800, color: AppColors.textPrimary),
             const SizedBox(height: 4),
-            CustomText(TKeys.qtTapAddProduct.tr,
+            CustomText(
+                canManage ? TKeys.qtTapAddProduct.tr : TKeys.qtQueueLocked.tr,
                 fontSize: 13, fontWeight: FontWeight.w500,
                 textAlign: TextAlign.center, color: AppColors.textSecondary),
           ],

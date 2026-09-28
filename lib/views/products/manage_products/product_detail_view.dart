@@ -11,6 +11,7 @@ import '../../../models/seller_product_detail.dart';
 import '../../../models/seller_product_preview.dart';
 import 'edit_product_view.dart';
 import 'product_common.dart';
+import 'shipping_options_sheet.dart';
 import '../../../core/localization/translation_keys.dart';
 
 /// Full-page product details, opened from the My Products grid's View button.
@@ -109,6 +110,55 @@ class _ProductDetailViewState extends State<ProductDetailView> {
     );
   }
 
+  /// Shipping, changed from this page rather than by walking the seller through
+  /// the whole edit form for one number.
+  ///
+  /// End to end: pick the option → give the reason the API insists on →
+  /// `PATCH /api/v1/seller/products/{id}` with `useDefaultShipping` +
+  /// `shippingPriceNok`, the same two fields the edit form sends. The
+  /// controller re-reads detail, preview and the list on success, so the card
+  /// behind the sheet is showing the server's own answer by the time the sheet
+  /// is gone — nothing is patched optimistically.
+  Future<void> _editShipping(SellerProductDetail? detail) async {
+    if (detail == null) return;
+
+    final choice = await showShippingOptionsSheet(context: context, detail: detail);
+    if (choice == null || !mounted) return;
+
+    // Guard here as well as in the sheet: a seller who reopened the sheet and
+    // reselected what was already in force should cost no edit-history entry.
+    if (choice.useDefault == !detail.shippingOverrideEnabled &&
+        (choice.useDefault || choice.priceNok == detail.shippingPriceNok)) {
+      Get.snackbar(TKeys.shippingSettings.tr, TKeys.shippingNoChange.tr);
+      return;
+    }
+
+    final reason = await showEditReasonSheet(context);
+    if (reason == null || !mounted) return;
+
+    final ok = await widget.ctrl.updateProduct(
+      productId: _product.id,
+      editReason: reason,
+      changes: {
+        'useDefaultShipping': choice.useDefault,
+        // Switching back to the platform price clears the override, so the two
+        // fields can never disagree about what the buyer pays.
+        'shippingPriceNok': choice.useDefault ? null : choice.priceNok,
+      },
+    );
+    if (!mounted) return;
+
+    if (ok) {
+      Get.snackbar(TKeys.shippingUpdated.tr, TKeys.shippingUpdatedBody.tr);
+    } else {
+      Get.snackbar(
+        TKeys.errorTitle.tr,
+        widget.ctrl.editError ?? TKeys.pleaseTryAgain.tr,
+        duration: const Duration(seconds: 5),
+      );
+    }
+  }
+
   Future<void> _copy(String label, String value) async {
     await Clipboard.setData(ClipboardData(text: value));
     if (!mounted) return;
@@ -151,6 +201,7 @@ class _ProductDetailViewState extends State<ProductDetailView> {
                   backgroundColor: Colors.white,
                   surfaceTintColor: Colors.white,
                   elevation: 0,
+                  leading: const _BackButton(),
                   title: Text(TKeys.productDetails.tr),
                   actions: [
                     _EditAction(onTap: _onEdit),
@@ -293,7 +344,11 @@ class _ProductDetailViewState extends State<ProductDetailView> {
       ),
       const SizedBox(height: 26),
 
-      _ShippingCard(detail: detail, onUpdate: _onEdit, metrics: metrics),
+      _ShippingCard(
+        detail: detail,
+        onUpdate: () => _editShipping(detail),
+        metrics: metrics,
+      ),
       const SizedBox(height: 26),
 
       _SectionTitle(
@@ -478,6 +533,14 @@ class _StackedLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The back chevron sits in the bar, and the bar floats over the flexible
+    // space — so the photo has to start *below* it or the arrow lands on the
+    // product. Reserving the bar's own height inside the background keeps the
+    // two apart, and the expanded height grows by the same amount so the
+    // picture is no smaller than it was.
+    final barHeight =
+        MediaQuery.paddingOf(context).top + kToolbarHeight;
+
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(
         parent: BouncingScrollPhysics(),
@@ -485,17 +548,23 @@ class _StackedLayout extends StatelessWidget {
       slivers: [
         SliverAppBar(
           pinned: true,
-          expandedHeight: metrics.galleryHeight,
+          expandedHeight: metrics.galleryHeight + kToolbarHeight,
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0.5,
           foregroundColor: AppColors.brandNavy,
           titleSpacing: 0,
+          leading: const _BackButton(),
           // Only the collapsed bar carries the name; expanded, the photo has
           // the stage to itself.
           title: _CollapsedTitle(title: title),
-          flexibleSpace: FlexibleSpaceBar(background: gallery),
+          flexibleSpace: FlexibleSpaceBar(
+            background: Padding(
+              padding: EdgeInsets.only(top: barHeight),
+              child: gallery,
+            ),
+          ),
         ),
         SliverToBoxAdapter(
           child: Transform.translate(
@@ -532,6 +601,22 @@ class _StackedLayout extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Back control for both layouts: the iOS chevron rather than Material's
+/// arrow, on every platform, so the gesture matches the rest of the seller app.
+class _BackButton extends StatelessWidget {
+  const _BackButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19),
+      color: AppColors.brandNavy,
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      onPressed: () => Navigator.of(context).maybePop(),
     );
   }
 }
@@ -707,8 +792,13 @@ String? _dateTime(DateTime? value) {
 
 // ── Layout primitives ───────────────────────────────────────────────────────
 
-/// Section heading: a brand-yellow marker, the title, and a hairline running
-/// out to the edge.
+/// Section heading: a brand-yellow marker and the title.
+///
+/// The hairline that used to run from the title out to the right margin is
+/// gone. It was taking three parts in five of the row, which left "Warehouse
+/// and logistics" and "Extended description" ellipsised to "Warehouse and…" on
+/// a phone — a rule that cost the heading its own words. The title now takes
+/// the width it needs and wraps rather than truncating.
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.title, {required this.icon});
 
@@ -718,6 +808,7 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
           width: 30,
@@ -736,20 +827,16 @@ class _SectionTitle extends StatelessWidget {
           child: Icon(icon, size: 16, color: AppColors.brandNavy),
         ),
         const SizedBox(width: 10),
-        Flexible(
+        Expanded(
           child: CustomText(
             title,
             fontSize: 16,
             fontWeight: FontWeight.w800,
-            maxLines: 1,
+            height: 1.25,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             color: AppColors.textPrimary,
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          flex: 3,
-          child: Container(height: 1, color: AppColors.borderGrey),
         ),
       ],
     );
@@ -967,7 +1054,15 @@ class _Card extends StatelessWidget {
 
 // ── Sections ────────────────────────────────────────────────────────────────
 
-/// Product name with the status / visibility chips.
+/// Brand over product name, with the status / visibility chips.
+///
+/// The brand is the headline and the product name the line beneath it — the
+/// order a price tag or a product page uses. The two swapped roles: the brand
+/// used to be an 11pt muted eyebrow above a 22pt name, which buried the one
+/// word a seller scans a catalogue by.
+///
+/// With no brand on the product the name takes the headline slot itself,
+/// rather than leaving the block starting on a supporting line.
 class _TitleBlock extends StatelessWidget {
   const _TitleBlock({required this.detail, required this.product});
 
@@ -978,26 +1073,29 @@ class _TitleBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final name =
         (detail?.name.isNotEmpty ?? false) ? detail!.name : product.name;
+    final brand = (detail?.brand ?? '').trim();
+    final hasBrand = brand.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if ((detail?.brand ?? '').isNotEmpty) ...[
+        if (hasBrand) ...[
           CustomText(
-            detail!.brand!.toUpperCase(),
-            fontSize: 11,
+            brand,
+            fontSize: 24,
             fontWeight: FontWeight.w800,
-            letterSpacing: 1.2,
-            color: AppColors.textMuted,
+            height: 1.15,
+            letterSpacing: -0.3,
+            color: Colors.black,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
         ],
         CustomText(
           name,
-          fontSize: 22,
-          fontWeight: FontWeight.w800,
-          height: 1.18,
-          color: AppColors.textPrimary,
+          fontSize: hasBrand ? 14.5 : 22,
+          fontWeight: hasBrand ? FontWeight.w500 : FontWeight.w800,
+          height: hasBrand ? 1.4 : 1.18,
+          color: hasBrand ? AppColors.textSecondary : AppColors.textPrimary,
         ),
         const SizedBox(height: 12),
         Wrap(

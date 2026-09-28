@@ -275,6 +275,24 @@ class AuctionRoomApi {
     _data(res);
   }
 
+  /// `PATCH /api/v1/seller/streams/:id` — saves the stream's description, the
+  /// text buyers open as "Show Notes".
+  ///
+  /// [title] rides along because the endpoint validates the pair; passing the
+  /// stream's current title leaves it as it was.
+  Future<void> updateShowNotes(
+    String streamId, {
+    required String title,
+    required String description,
+  }) async {
+    final res = await _api.patch(
+      '${EnvConfig.baseUrl}/api/v1/seller/streams/$streamId',
+      headers: await _headers,
+      body: {'title': title, 'description': description},
+    );
+    _data(res);
+  }
+
   /// `DELETE /api/v1/seller/streams/:id/announcement` — takes the banner down.
   Future<void> clearAnnouncement(String streamId) async {
     final res = await _api.delete(

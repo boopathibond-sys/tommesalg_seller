@@ -634,6 +634,20 @@ abstract class TKeys {
   static const allowedAmountsCaps = 'allowed_amounts_caps';
   static const maximumPerProduct = 'maximum_per_product';
   static const updateShippingOptions = 'update_shipping_options';
+  static const shippingChooseOption = 'shipping_choose_option';
+  static const shippingStandardOption = 'shipping_standard_option';
+  static const shippingCustomOption = 'shipping_custom_option';
+  static const shippingOverrideLocked = 'shipping_override_locked';
+  static const shippingPickAmount = 'shipping_pick_amount';
+  static const shippingNoAmounts = 'shipping_no_amounts';
+  static const shippingUpdated = 'shipping_updated';
+  static const shippingUpdatedBody = 'shipping_updated_body';
+  static const shippingNoChange = 'shipping_no_change';
+  static const shippingCaps = 'shipping_caps';
+  static const shippingQuickViewBody = 'shipping_quick_view_body';
+  static const shippingStandardSuffix = 'shipping_standard_suffix';
+  static const saveShipping = 'save_shipping';
+  static const couldNotUpdateShipping = 'could_not_update_shipping';
   static const referralLink = 'referral_link';
   static const openAction = 'open_action';
   static const copyAction = 'copy_action';
@@ -819,6 +833,8 @@ abstract class TKeys {
   static const csTitle = 'cs_title';
   static const csTitleHint = 'cs_title_hint';
   static const csDescriptionHint = 'cs_description_hint';
+  /// Seller-facing label for the stream's `description` field.
+  static const csNote = 'cs_note';
   static const csThumbnail = 'cs_thumbnail';
   static const csThumbnailHelp = 'cs_thumbnail_help';
   static const csSizes = 'cs_sizes';
@@ -982,6 +998,20 @@ abstract class TKeys {
   static const ntUnavailable = 'nt_unavailable';
   static const ntUnavailableBody = 'nt_unavailable_body';
 
+  // Unarchive / restore + multi-select
+  static const ntUnarchive = 'nt_unarchive';
+  static const ntUnarchiveAll = 'nt_unarchive_all';
+  static const ntUnarchiveAllBody = 'nt_unarchive_all_body';
+  static const ntAllUnarchived = 'nt_all_unarchived';
+  static const ntMovedToInbox = 'nt_moved_to_inbox';
+  static const ntSelect = 'nt_select';
+  static const ntSelectedCount = 'nt_selected_count';
+  static const ntSelectAll = 'nt_select_all';
+  static const ntSelectionMoved = 'nt_selection_moved';
+  static const ntSelectionArchived = 'nt_selection_archived';
+  static const ntSelectLimit = 'nt_select_limit';
+  static const ntNothingSelected = 'nt_nothing_selected';
+
   // ── Edit profile ──
   static const epRequired = 'ep_required';
   static const epDisplayNameEmpty = 'ep_display_name_empty';
@@ -993,6 +1023,9 @@ abstract class TKeys {
   static const epDisplayName = 'ep_display_name';
   static const epBusinessName = 'ep_business_name';
   static const epPublicSlug = 'ep_public_slug';
+  static const epUrlSlugLabel = 'ep_url_slug_label';
+  static const epSlugNote = 'ep_slug_note';
+  static const epAboutLabel = 'ep_about_label';
   static const epPublicSections = 'ep_public_sections';
   static const epPublicSectionsBody = 'ep_public_sections_body';
   static const epHeader = 'ep_header';
@@ -1230,11 +1263,28 @@ abstract class TKeys {
   static const ltUnmute = 'lt_unmute';
   static const ltMute = 'lt_mute';
   static const ltFlip = 'lt_flip';
+  static const ltMore = 'lt_more';
+  static const ltMirror = 'lt_mirror';
   static const ltNoAuctionRunning = 'lt_no_auction_running';
   static const ltAddProductsFirst = 'lt_add_products_first';
+  static const ltAddNow = 'lt_add_now';
   static const ltStartNextLot = 'lt_start_next_lot';
   static const ltStartAuction = 'lt_start_auction';
+  static const ltStartAuctionNow = 'lt_start_auction_now';
+  static const ltShippingAmount = 'lt_shipping_amount';
+  static const ltIsWinning = 'lt_is_winning';
   static const ltGoLiveToStart = 'lt_go_live_to_start';
+
+  // Show notes — the stream description buyers open from the room.
+  static const snShowNotes = 'sn_show_notes';
+  static const snSubtitle = 'sn_subtitle';
+  static const snEmpty = 'sn_empty';
+  static const snHint = 'sn_hint';
+  static const snUpdate = 'sn_update';
+  static const snAdd = 'sn_add';
+  static const snCancel = 'sn_cancel';
+  static const snLockedLive = 'sn_locked_live';
+  static const snEmptyLive = 'sn_empty_live';
   static const ltCurrentLot = 'lt_current_lot';
   static const ltCurrentPrice = 'lt_current_price';
   static const ltHighestBid = 'lt_highest_bid';
@@ -1281,12 +1331,21 @@ abstract class TKeys {
   static const ctMuteViewer = 'ct_mute_viewer';
   static const ctClearChatTitle = 'ct_clear_chat_title';
   static const ctClearChatBody = 'ct_clear_chat_body';
+  static const ctDisableChat = 'ct_disable_chat';
+  static const ctEnableChat = 'ct_enable_chat';
+  static const ctClearChat = 'ct_clear_chat';
+  static const ctDisableChatTitle = 'ct_disable_chat_title';
+  static const ctDisableChatBody = 'ct_disable_chat_body';
+  static const ctEnableChatTitle = 'ct_enable_chat_title';
+  static const ctEnableChatBody = 'ct_enable_chat_body';
+  static const ctChatOn = 'ct_chat_on';
   static const ctYouHost = 'ct_you_host';
   static const ctUserPrefix = 'ct_user_prefix';
   static const ctChatDisabled = 'ct_chat_disabled';
   static const ctMessageHint = 'ct_message_hint';
 
   // ── Queue tab ──
+  static const qtProductQueueTitle = 'qt_product_queue_title';
   static const qtAddProduct = 'qt_add_product';
   static const qtClearQueueTitle = 'qt_clear_queue_title';
   static const qtClearQueueBody = 'qt_clear_queue_body';
@@ -1413,6 +1472,7 @@ abstract class TKeys {
   static const sasDutch = 'sas_dutch';
   static const sasDuration = 'sas_duration';
   static const sasStartingPriceOptional = 'sas_starting_price_optional';
+  static const sasBidIncrementOptional = 'sas_bid_increment_optional';
 
   // ── Media push ──
   static const mpMediaPush = 'mp_media_push';
@@ -1543,4 +1603,24 @@ abstract class TKeys {
   // ── Email hints ──
   static const emailHintTommesalg = 'email_hint_tommesalg';
   static const emailHintExample = 'email_hint_example';
+
+  // ── Watch mode (a seller device without auction control) ──
+  static const ltWatchFailed = 'lt_watch_failed';
+  static const ltWatchConnecting = 'lt_watch_connecting';
+  static const ltWaitingMainLive = 'lt_waiting_main_live';
+  static const ltWaitingMainLiveSub = 'lt_waiting_main_live_sub';
+  static const ltMainCameraOff = 'lt_main_camera_off';
+  static const ltViewingMain = 'lt_viewing_main';
+  static const ltWatchingTitle = 'lt_watching_title';
+  static const ltWatchingBody = 'lt_watching_body';
+  static const ltSwitchingRole = 'lt_switching_role';
+  static const qtQueueLocked = 'qt_queue_locked';
+  static const acControlNowYours = 'ac_control_now_yours';
+  static const acControlNowElsewhere = 'ac_control_now_elsewhere';
+  static const actManageQueue = 'act_manage_queue';
+  static const actStartLot = 'act_start_lot';
+  static const actEndLot = 'act_end_lot';
+  static const actReducePrice = 'act_reduce_price';
+  static const arLeaveBodyBroadcast = 'ar_leave_body_broadcast';
+  static const arLeaveBodyWatching = 'ar_leave_body_watching';
 }

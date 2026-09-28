@@ -6,15 +6,13 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../views/home/home_view.dart';
 import '../controllers/auction_room_controller.dart';
-import 'tabs/chat_tab.dart';
 import 'tabs/live_tab.dart';
-import 'tabs/orders_tab.dart';
 import 'tabs/queue_tab.dart';
 import 'widgets/room_sheets.dart';
 import '../../../core/localization/translation_keys.dart';
 
 /// Entry point for the seller live auction room. Owns the [AuctionRoomController]
-/// lifecycle (scoped to [streamId]) and hosts the Live / Queue / Chat tabs.
+/// lifecycle (scoped to [streamId]) and hosts the full-screen [LiveTab].
 class AuctionRoomView extends StatefulWidget {
   const AuctionRoomView({super.key, required this.streamId, this.title});
 
@@ -29,7 +27,6 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
     with WidgetsBindingObserver {
   late final AuctionRoomController ctrl;
   late final Worker _extendPromptWorker;
-  int _tab = 0;
   bool _extendPromptOpen = false;
 
   @override
@@ -87,9 +84,13 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: CustomText(TKeys.arLeaveRoomTitle.tr,
             fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-        content: const CustomText(
-          'Your broadcast will stop and this device will disconnect. The stream '
-          'itself stays live until you end it.',
+        // A watcher has no broadcast to stop — telling it that one will stop
+        // reads as "leaving will take the stream down", which is the opposite
+        // of what happens.
+        content: CustomText(
+          ctrl.isController
+              ? TKeys.arLeaveBodyBroadcast.tr
+              : TKeys.arLeaveBodyWatching.tr,
           fontSize: 14, fontWeight: FontWeight.w500, height: 1.4,
           color: AppColors.textSecondary,
         ),
@@ -147,6 +148,18 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
   /// confirmation (there is no broadcast left to interrupt).
   void _leaveAndClose() => _close(Navigator.of(context));
 
+  /// Opens the lot queue as a route over the room.
+  ///
+  /// It used to be a bottom-nav tab. The nav is gone — the camera owns the
+  /// whole screen now — so the queue is reached from the round button beside
+  /// the chat field and pushed on top, which also means the broadcast keeps
+  /// running underneath instead of being swapped out of an `IndexedStack`.
+  void _openQueue() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => QueuePage(ctrl: ctrl)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -158,9 +171,9 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(
-          // `bottom: false` so [_RoomBottomNav] can paint its own surface all
-          // the way down to the screen edge and pad itself for the home
-          // indicator, instead of floating above a white gap.
+          // `bottom: false` so the camera stage runs all the way down to the
+          // screen edge. The Live tab's auction deck pads itself for the home
+          // indicator, so nothing tappable ends up under it.
           bottom: false,
           child: Obx(() {
             if (ctrl.permissionDenied.value) {
@@ -182,316 +195,15 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
               return _StreamEnded(onLeave: _leaveAndClose);
             }
 
-            return Column(
-              children: [
-                _RoomHeader(
-                  title: widget.title ?? ctrl.stream?.title ?? TKeys.arAuctionRoom.tr,
-                  ctrl: ctrl,
-                  onBack: _confirmLeaveAndClose,
-                ),
-                Expanded(
-                  child: IndexedStack(
-                    index: _tab,
-                    children: [
-                      LiveTab(ctrl: ctrl),
-                      QueueTab(ctrl: ctrl),
-                      OrdersTab(ctrl: ctrl),
-                      ChatTab(ctrl: ctrl),
-                    ],
-                  ),
-                ),
-                _RoomBottomNav(
-                  ctrl: ctrl,
-                  index: _tab,
-                  onChanged: (i) => setState(() => _tab = i),
-                ),
-              ],
+            // The room is the camera, full screen: the queue is a pushed page
+            // and the orders are a sheet off the ⋮ menu, so there is no bottom
+            // nav and no white header left to frame the feed.
+            return LiveTab(
+              ctrl: ctrl,
+              onClose: _confirmLeaveAndClose,
+              onOpenQueue: _openQueue,
             );
           }),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoomHeader extends StatelessWidget {
-  const _RoomHeader({required this.title, required this.ctrl, required this.onBack});
-  final String title;
-  final AuctionRoomController ctrl;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 16, 6),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: onBack,
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: AppColors.textPrimary),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CustomText(title,
-                    fontSize: 17, fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                Obx(() {
-                  final live = ctrl.isLive;
-                  final left = ctrl.timeLeft.value;
-                  final urgent = ctrl.endingSoon;
-                  // A scheduled stream has no countdown yet, so spell out when
-                  // it's planned to start rather than when it would end.
-                  final planned = (ctrl.stream?.isScheduled ?? false)
-                      ? ctrl.plannedAtLabel
-                      : null;
-                  return Row(
-                    children: [
-                      Container(
-                        width: 7, height: 7,
-                        decoration: BoxDecoration(
-                          color: live ? AppColors.vipps : AppColors.textMuted,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      CustomText(
-                        live ? 'LIVE' : (ctrl.stream?.status ?? ''),
-                        fontSize: 11, fontWeight: FontWeight.w800,
-                        color: live ? AppColors.vipps : AppColors.textMuted,
-                      ),
-                      if (!live && planned != null) ...[
-                        const SizedBox(width: 5),
-                        // Flexible, not bare: the date makes this the longest
-                        // item in the row, and it's the one that should ellipsis
-                        // rather than push the viewer count off screen.
-                        Flexible(
-                          child: CustomText(
-                            TKeys.arPlannedAt.trParams({'time': planned}),
-                            fontSize: 11, fontWeight: FontWeight.w700,
-                            color: AppColors.textMuted,
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(width: 10),
-                      const Icon(Icons.remove_red_eye_outlined,
-                          size: 13, color: AppColors.textMuted),
-                      const SizedBox(width: 3),
-                      CustomText('${ctrl.audienceCount.value}',
-                          fontSize: 11, fontWeight: FontWeight.w700,
-                          color: AppColors.textMuted),
-                      // Time left before the stream auto-ends — tap to add more.
-                      if (live && left != null && !left.isNegative) ...[
-                        const SizedBox(width: 10),
-                        GestureDetector(
-                          onTap: () => showExtendDialog(context, ctrl),
-                          behavior: HitTestBehavior.opaque,
-                          child: Row(
-                            children: [
-                              Icon(Icons.timer_outlined, size: 13,
-                                  color: urgent
-                                      ? AppColors.vipps
-                                      : AppColors.textMuted),
-                              const SizedBox(width: 3),
-                              CustomText(
-                                _fmtRemaining(left),
-                                fontSize: 11, fontWeight: FontWeight.w700,
-                                color: urgent
-                                    ? AppColors.vipps
-                                    : AppColors.textMuted,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  );
-                }),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: () => showRoomActions(context, ctrl),
-            icon: const Icon(Icons.more_vert_rounded, color: AppColors.textPrimary),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// `1h 20m` while there's plenty of time, `4:07` once inside the last hour.
-String _fmtRemaining(Duration d) {
-  final total = d.inSeconds;
-  final h = total ~/ 3600;
-  final m = (total % 3600) ~/ 60;
-  if (h > 0) return '${h}h ${m}m';
-  return '$m:${(total % 60).toString().padLeft(2, '0')}';
-}
-
-/// Full-bleed bottom navigation for the room's Live / Queue / Orders / Chat
-/// tabs.
-///
-/// It sits at the very bottom of the screen (the room's `SafeArea` opts out of
-/// the bottom inset so this bar paints its own surface behind the home
-/// indicator) and spans the full width. The Live tab is a full-bleed camera
-/// stage, and the floating segmented control this replaced read as one more
-/// overlay competing with the broadcast controls.
-class _RoomBottomNav extends StatelessWidget {
-  const _RoomBottomNav({
-    required this.ctrl,
-    required this.index,
-    required this.onChanged,
-  });
-
-  final AuctionRoomController ctrl;
-  final int index;
-  final ValueChanged<int> onChanged;
-
-  // Getter, not a stored field: `.tr` must re-resolve when the seller
-  // switches language, and a field initialiser only ever runs once.
-  static List<String> get _labels => [
-        TKeys.arTabLive.tr,
-        TKeys.arTabQueue.tr,
-        TKeys.ordersLabel.tr,
-        TKeys.arTabChat.tr,
-      ];
-  // Filled while selected, outlined while not — the usual bottom-nav cue.
-  static const _icons = [
-    Icons.videocam_rounded,
-    Icons.inventory_2_rounded,
-    Icons.receipt_long_rounded,
-    Icons.chat_bubble_rounded,
-  ];
-  static const _iconsOutline = [
-    Icons.videocam_outlined,
-    Icons.inventory_2_outlined,
-    Icons.receipt_long_outlined,
-    Icons.chat_bubble_outline_rounded,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    // `padding`, not `viewPadding`: it collapses to 0 once the keyboard is up
-    // (Chat tab), so the bar sits flush on the keyboard instead of floating a
-    // home-indicator's worth of white above it.
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    return Container(
-      padding: EdgeInsets.only(top: 8, bottom: 6 + bottomInset),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        border: const Border(
-            top: BorderSide(color: AppColors.borderGrey, width: 1)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.brandNavy.withOpacity(0.06),
-            blurRadius: 18, offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      // Transparent Material so the items' ink splashes paint above this
-      // container's white fill instead of on the Scaffold beneath it.
-      child: Material(
-        type: MaterialType.transparency,
-        // One Obx around the whole row, reading both counts up front. Wrapping
-        // each item instead threw "improper use of a GetX": the Live and Chat
-        // items carry no badge, so their Obx touched no observable at all.
-        child: Obx(() {
-          // Counts the seller acts on: lots lined up, and orders the stream
-          // has produced so far.
-          final badges = [0, ctrl.queueView.length, ctrl.orders.length, 0];
-          return Row(
-            children: List.generate(_labels.length, (i) {
-              return Expanded(
-                child: _NavItem(
-                  label: _labels[i],
-                  icon: i == index ? _icons[i] : _iconsOutline[i],
-                  selected: i == index,
-                  badge: badges[i],
-                  onTap: () => onChanged(i),
-                ),
-              );
-            }),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-/// One bottom-nav destination: an icon in a pill that fills with brand navy
-/// when selected, its label beneath, and an optional count badge.
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.badge,
-    required this.onTap,
-  });
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final int badge;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  width: 52, height: 30,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.brandNavy : Colors.transparent,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Icon(icon, size: 19,
-                      color: selected
-                          ? AppColors.brandYellow
-                          : AppColors.textMuted),
-                ),
-                if (badge > 0)
-                  Positioned(
-                    top: -3, right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      constraints: const BoxConstraints(minWidth: 17),
-                      height: 17,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.vipps,
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(color: AppColors.white, width: 1.5),
-                      ),
-                      child: CustomText(badge > 99 ? '99+' : '$badge',
-                          fontSize: 9, fontWeight: FontWeight.w800,
-                          color: AppColors.white),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            CustomText(label, fontSize: 11,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                maxLines: 1, overflow: TextOverflow.ellipsis,
-                color: selected ? AppColors.textPrimary : AppColors.textMuted),
-          ],
         ),
       ),
     );

@@ -299,6 +299,155 @@ class NotificationController extends GetxController {
     return ok;
   }
 
+  /// Restores one archived row back into the inbox.
+  ///
+  /// There is no `…/{id}/unarchive` route — `restore` only exists as a **bulk**
+  /// action — so this is the bulk endpoint called with a single id. Mirrors
+  /// [archive] exactly: inside the archive slice the row leaves the list, and
+  /// an unread row comes back into the badge; both are reverted if the call
+  /// fails.
+  Future<bool> unarchive(String id) async {
+    final index = _indexOf(id);
+    if (index < 0) return false;
+
+    final original = _notifications[index];
+    final showingArchive = _filter.value == NotificationFilter.archived;
+    // Being in the archive slice counts as archived even when the row itself
+    // came back without an `archivedAt` — otherwise the restore silently
+    // no-ops on exactly the rows that need it.
+    if (!original.isArchived && !showingArchive) return true;
+
+    if (showingArchive) {
+      // Restored rows no longer belong to the slice on screen.
+      _notifications.removeAt(index);
+    } else {
+      _notifications[index] = original.copyWith(isArchived: false);
+    }
+    if (original.isUnread) _bumpUnread(1);
+
+    final ok = await _post(
+      '$_base/bulk',
+      body: {
+        'ids': [id],
+        'action': 'restore',
+      },
+    );
+    if (!ok) {
+      if (showingArchive) {
+        _notifications.insert(index.clamp(0, _notifications.length), original);
+      } else {
+        final current = _indexOf(id);
+        if (current >= 0) _notifications[current] = original;
+      }
+      if (original.isUnread) _bumpUnread(-1);
+    }
+    return ok;
+  }
+
+  /// Restores **every** archived notification back into the inbox — the
+  /// counterpart to [markAllArchived].
+  ///
+  /// The API has no `restore-all` route, and `bulk` caps at 100 ids, so this
+  /// walks the archive with its own cursor (never touching the loaded list or
+  /// [_cursor]) and posts one `restore` batch per page. [maxPages] bounds the
+  /// walk so a huge archive can't spin forever; when it is hit the call still
+  /// reports success for what it moved and the seller can run it again.
+  ///
+  /// Returns `false` if any batch fails — earlier batches stay restored, which
+  /// is why the list is reloaded either way.
+  Future<bool> unarchiveAll({int maxPages = 20}) async {
+    if (_isMutating.value) return false;
+    _isMutating.value = true;
+    try {
+      var ok = true;
+      var moved = 0;
+      String? cursor;
+
+      for (var page = 0; page < maxPages; page++) {
+        final ids = await _fetchArchivedIds(cursor: cursor);
+        if (ids == null) {
+          ok = false;
+          break;
+        }
+        if (ids.items.isEmpty) break;
+
+        final batchOk = await _post(
+          '$_base/bulk',
+          body: {'ids': ids.items, 'action': 'restore'},
+        );
+        if (!batchOk) {
+          ok = false;
+          break;
+        }
+        moved += ids.items.length;
+
+        // Restored rows leave the archive, so the next page is always read
+        // from the top: paging with the old cursor would skip rows that just
+        // shifted forward.
+        cursor = null;
+        if (!ids.hasMore) break;
+      }
+
+      if (moved > 0) {
+        _cursor = null;
+        await fetchNotifications();
+        await fetchUnreadCount();
+      }
+      return ok;
+    } finally {
+      _isMutating.value = false;
+    }
+  }
+
+  /// One page of archived ids, read straight off
+  /// `GET /api/notifications?archived=true` without disturbing the loaded
+  /// list, the active filter or the paging cursor. Returns `null` on failure.
+  Future<_ArchivedIdPage?> _fetchArchivedIds({String? cursor}) async {
+    try {
+      final uri = Uri.parse('${EnvConfig.baseUrl}$_base').replace(
+        queryParameters: <String, String>{
+          'limit': '100',
+          if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+          'archived': 'true',
+        },
+      );
+
+      final response = await _api.get(
+        uri.toString(),
+        headers: await AuthService.instance.ensuredAuthHeaders(),
+      );
+      final body = _decode(response.body);
+
+      if (!response.isSuccess || body is! Map || body['success'] != true) {
+        if (_isFeatureDisabled(response.statusCode, body)) return null;
+        _errorMessage.value =
+            _messageIn(body) ?? 'That action could not be completed.';
+        return null;
+      }
+
+      final data = body['data'];
+      final ids = _itemsIn(data)
+          .map((m) => '${m['id'] ?? ''}')
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      final metaJson = (body['meta'] is Map)
+          ? Map<String, dynamic>.from(body['meta'] as Map)
+          : (data is Map ? Map<String, dynamic>.from(data) : null);
+      final meta =
+          metaJson == null ? null : NotificationListMeta.fromJson(metaJson);
+
+      return _ArchivedIdPage(
+        items: ids,
+        hasMore: meta?.hasMore ?? false,
+      );
+    } catch (e) {
+      log('Notifications archived-ids fetch error: $e');
+      _errorMessage.value = 'Network error. Please try again.';
+      return null;
+    }
+  }
+
   /// `POST /api/notifications/read-all` — marks the whole inbox read, then
   /// flips every loaded row and zeroes the badge.
   ///
@@ -510,4 +659,12 @@ class NotificationController extends GetxController {
     }
     return false;
   }
+}
+
+/// One page of archived ids collected by [NotificationController.unarchiveAll].
+class _ArchivedIdPage {
+  const _ArchivedIdPage({required this.items, required this.hasMore});
+
+  final List<String> items;
+  final bool hasMore;
 }

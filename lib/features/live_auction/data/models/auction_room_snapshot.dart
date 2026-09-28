@@ -160,6 +160,7 @@ class StreamSnapshot {
     this.sellerId,
     required this.status,
     this.title,
+    this.description,
     this.thumbnailUrl,
     this.bidsPaused = false,
     this.chatDisabled = false,
@@ -175,6 +176,10 @@ class StreamSnapshot {
   final String? sellerId;
   final String status; // LIVE | SCHEDULED | ENDED | CANCELLED
   final String? title;
+
+  /// The seller's own text about the stream — what buyers open as "Show Notes".
+  final String? description;
+
   final String? thumbnailUrl;
   final bool bidsPaused;
   final bool chatDisabled;
@@ -229,6 +234,7 @@ class StreamSnapshot {
         sellerId: sellerId,
         status: status ?? this.status,
         title: title,
+        description: description,
         thumbnailUrl: thumbnailUrl,
         bidsPaused: bidsPaused ?? this.bidsPaused,
         chatDisabled: chatDisabled ?? this.chatDisabled,
@@ -245,6 +251,7 @@ class StreamSnapshot {
         sellerId: json['sellerId'] as String?,
         status: (json['status'] ?? '') as String,
         title: json['title'] as String?,
+        description: json['description'] as String?,
         thumbnailUrl: json['thumbnailUrl'] as String?,
         bidsPaused: json['bidsPaused'] as bool? ?? false,
         chatDisabled: json['chatDisabled'] as bool? ?? false,
@@ -359,6 +366,7 @@ class ActiveAuction {
     this.currentPrice,
     this.highestBid,
     this.bidCount = 0,
+    this.shippingPriceNok,
     this.winnerName,
     required this.raw,
   });
@@ -374,22 +382,55 @@ class ActiveAuction {
   final num? currentPrice;
   final num? highestBid;
   final int bidCount;
+
+  /// What the buyer pays on top of the winning bid, as the seller set it when
+  /// the lot was started. Raw: zero (and anything negative) means "not
+  /// configured" on this backend rather than "free" — [shippingPrice] is the
+  /// one to read.
+  final num? shippingPriceNok;
+
   final String? winnerName;
   final Map<String, dynamic> raw;
 
   bool get isDutch => auctionType == 'DUTCH';
 
+  /// The shipping figure worth showing, or null when there is none.
+  num? get shippingPrice {
+    final raw = shippingPriceNok;
+    return raw != null && raw > 0 ? raw : null;
+  }
+
   /// Best-effort "current price to beat / offer" for the header.
-  num? get displayPrice => highestBid ?? currentPrice ?? startingPrice;
+  ///
+  /// A non-positive figure counts as absent, not as a price. A lot that has
+  /// just started comes back with `highestBid: 0` (and, on this backend, often
+  /// `currentPrice: 0` with it) because nobody has bid yet — taking that at
+  /// face value rendered a brand-new lot as "kr 0" until the first bid landed.
+  /// Falling through to [startingPrice] shows the figure the seller actually
+  /// set. Dutch lots are unaffected: their descending `currentPrice` is always
+  /// positive.
+  num? get displayPrice {
+    final highest = highestBid;
+    if (highest != null && highest > 0) return highest;
+    final current = currentPrice;
+    if (current != null && current > 0) return current;
+    return startingPrice;
+  }
 
   /// Fills only the given fields, keeping everything else. Used to enrich a
   /// sparse start-mutation echo (which often omits the product name / price)
-  /// from the queue head, so the running-auction card shows details instantly.
+  /// from the queue head, so the running-auction card shows details instantly
+  /// — and to post a bid read straight off a WS event, without waiting for the
+  /// next full snapshot to carry it.
   ActiveAuction copyWith({
     String? title,
     String? image,
     num? startingPrice,
     num? currentPrice,
+    num? highestBid,
+    int? bidCount,
+    num? shippingPriceNok,
+    String? winnerName,
   }) =>
       ActiveAuction(
         id: id,
@@ -401,9 +442,10 @@ class ActiveAuction {
         endsAt: endsAt,
         startingPrice: startingPrice ?? this.startingPrice,
         currentPrice: currentPrice ?? this.currentPrice,
-        highestBid: highestBid,
-        bidCount: bidCount,
-        winnerName: winnerName,
+        highestBid: highestBid ?? this.highestBid,
+        bidCount: bidCount ?? this.bidCount,
+        shippingPriceNok: shippingPriceNok ?? this.shippingPriceNok,
+        winnerName: winnerName ?? this.winnerName,
         raw: raw,
       );
 
@@ -433,6 +475,9 @@ class ActiveAuction {
       highestBid:
           _num(json['highestBid'] is num ? json['highestBid'] : highestMap['amount']),
       bidCount: _int(json['bidCount']) ?? 0,
+      shippingPriceNok: _num(json['shippingPriceNok'] ??
+          json['shippingPrice'] ??
+          json['shipping']),
       winnerName:
           (json['winnerName'] ?? winnerMap['displayName'] ?? winnerMap['name'])
               as String?,
