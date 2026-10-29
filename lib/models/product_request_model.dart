@@ -16,6 +16,11 @@ class ProductRequestProduct {
   /// picked one — the UI treats that as the 99 kr standard tier.
   final num? shippingPriceNok;
 
+  /// The product's shared sellable stock — what the auction can still sell.
+  /// Display only: it does not include draft (not yet submitted) units, and
+  /// the app never computes it. Null when the server didn't send it.
+  final int? stockCount;
+
   ProductRequestProduct({
     required this.id,
     required this.name,
@@ -30,6 +35,7 @@ class ProductRequestProduct {
     this.originalPrice,
     this.regularPrice,
     this.shippingPriceNok,
+    this.stockCount,
   });
 
   factory ProductRequestProduct.fromJson(Map<String, dynamic> json) {
@@ -51,11 +57,14 @@ class ProductRequestProduct {
               ?.map((e) => e.toString())
               .toList() ??
           const [],
-      originalPrice: json['originalPrice'] as num?,
+      originalPrice: (json['veilPris'] ?? json['originalPrice']) as num?,
       regularPrice: json['regularPrice'] as num?,
       shippingPriceNok: json['shippingPriceNok'] is num
           ? json['shippingPriceNok'] as num
           : num.tryParse('${json['shippingPriceNok'] ?? ''}'),
+      stockCount: json['stockCount'] is num
+          ? (json['stockCount'] as num).toInt()
+          : int.tryParse('${json['stockCount'] ?? ''}'),
     );
   }
 
@@ -74,6 +83,7 @@ class ProductRequestProduct {
       originalPrice: originalPrice,
       regularPrice: regularPrice,
       shippingPriceNok: shippingPriceNok ?? this.shippingPriceNok,
+      stockCount: stockCount,
     );
   }
 }
@@ -154,11 +164,14 @@ class ProductRequestItem {
     );
   }
 
-  ProductRequestItem copyWith({ProductRequestProduct? product}) {
+  ProductRequestItem copyWith({
+    ProductRequestProduct? product,
+    int? quantityRequested,
+  }) {
     return ProductRequestItem(
       id: id,
       productId: productId,
-      quantityRequested: quantityRequested,
+      quantityRequested: quantityRequested ?? this.quantityRequested,
       reservedQuantity: reservedQuantity,
       pendingQuantity: pendingQuantity,
       lineStatus: lineStatus,
@@ -169,6 +182,20 @@ class ProductRequestItem {
       sortOrder: sortOrder,
       product: product ?? this.product,
     );
+  }
+
+  /// Units of this line not yet sent to live (submitted).
+  ///
+  /// Submit credits a known line's units to stock and records them in
+  /// [reservedQuantity], so re-scanning the product afterwards leaves exactly
+  /// the new units in `quantityRequested − reservedQuantity`. An unknown-UPC
+  /// line never gets stock (an admin credits its full quantity once it's
+  /// matched), so it counts as unsent only while it is still a `DRAFT`.
+  int get unsentQuantity {
+    if (lineStatus == 'CANCELLED') return 0;
+    if (isUnknownUpc) return lineStatus == 'DRAFT' ? quantityRequested : 0;
+    final unsent = quantityRequested - reservedQuantity;
+    return unsent > 0 ? unsent : 0;
   }
 
   /// Best-effort image to display in the list/quick view.

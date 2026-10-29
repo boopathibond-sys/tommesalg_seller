@@ -11,6 +11,7 @@ import '../../../core/widgets/custom_text.dart';
 import '../../../models/inventory_location_detail.dart';
 import '../../../models/inventory_tag.dart';
 import '../../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// SKU create / edit dialog (see design in
 /// `lib/raw/Screenshot 2026-06-04 at 7.42.37 PM.png`).
@@ -187,19 +188,19 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
   Future<void> _addTagFromSearch() async {
     final label = _tagSearchCtrl.text.trim();
     if (label.isEmpty) {
-      Get.snackbar(TKeys.stMissingInfo.tr, TKeys.stTypeTagName.tr);
+      AppSnackbar.show(TKeys.stMissingInfo.tr, TKeys.stTypeTagName.tr);
       return;
     }
     final slug = _slugify(label);
     if (slug.isEmpty) {
-      Get.snackbar(TKeys.stMissingInfo.tr, TKeys.stEnterValidTag.tr);
+      AppSnackbar.show(TKeys.stMissingInfo.tr, TKeys.stEnterValidTag.tr);
       return;
     }
 
     final tag = await ctrl.createTag(slug: slug, label: label);
     if (!mounted) return;
     if (tag == null) {
-      Get.snackbar(TKeys.errorTitle.tr, ctrl.tagsError ?? TKeys.stCouldNotCreateTag.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, ctrl.tagsError ?? TKeys.stCouldNotCreateTag.tr);
       return;
     }
 
@@ -228,13 +229,13 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
   //       : _tagSlugCtrl.text.trim());
   //
   //   if (label.isEmpty || slug.isEmpty) {
-  //     Get.snackbar("Missing info", 'Enter a label for the new tag.');
+  //     AppSnackbar.show("Missing info", 'Enter a label for the new tag.');
   //     return;
   //   }
   //
   //   final tag = await ctrl.createTag(slug: slug, label: label);
   //   if (tag == null) {
-  //     Get.snackbar("Error", ctrl.tagsError ?? "Could not create tag.");
+  //     AppSnackbar.show("Error", ctrl.tagsError ?? "Could not create tag.");
   //     return;
   //   }
   //
@@ -251,7 +252,7 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
   Future<void> _submit() async {
     final code = _codeCtrl.text.trim();
     if (code.isEmpty) {
-      Get.snackbar(TKeys.stMissingInfo.tr, TKeys.stSkuCodeRequired.tr);
+      AppSnackbar.show(TKeys.stMissingInfo.tr, TKeys.stSkuCodeRequired.tr);
       return;
     }
 
@@ -283,12 +284,12 @@ class _NewSkuDialogState extends State<NewSkuDialog> {
 
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar(
+      AppSnackbar.show(
         widget.isEdit ? TKeys.savedTitle.tr : TKeys.stCreatedTitle.tr,
         widget.isEdit ? TKeys.stSkuUpdated.trParams({'code': code}) : TKeys.stSkuCreated.trParams({'code': code}),
       );
     } else {
-      Get.snackbar(TKeys.errorTitle.tr, error);
+      AppSnackbar.show(TKeys.errorTitle.tr, error);
     }
   }
 

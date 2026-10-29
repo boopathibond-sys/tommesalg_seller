@@ -1,15 +1,20 @@
+import 'dart:async';
 import 'dart:developer';
 
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 
 import '../core/config/env_config.dart';
 import '../core/services/api_client.dart';
 import '../core/services/auth_service.dart';
-import '../features/live_auction/data/services/auction_queue_dispatch_service.dart';
+import '../features/live_auction/data/models/catalog_product.dart';
+import '../features/live_auction/data/services/auction_room_api.dart';
 import '../models/product_request_model.dart';
+import '../models/send_to_live_result.dart';
 import '../models/stream_analytics.dart';
 import '../models/stream_category.dart';
 import '../models/stream_model.dart';
+import '../core/utils/image_compressor.dart';
 
 class StreamListController extends GetxController {
   // ---------- Reactive state ----------
@@ -77,8 +82,26 @@ class StreamListController extends GetxController {
 
   final RxList<ProductRequestItem> _productRequestItems =
       <ProductRequestItem>[].obs;
+  /// The Assign-to-live list: lines with units not yet sent to live. A line
+  /// that's fully submitted drops out; scanning that product again brings it
+  /// back showing just the new units (see [ProductRequestItem.unsentQuantity]).
   List<ProductRequestItem> get productRequestItems =>
-      _productRequestItems.toList();
+      _productRequestItems.where((item) => item.unsentQuantity > 0).toList();
+
+  /// What the Requests list shows: the unsent lines above, plus unknown-UPC
+  /// lines still waiting on admin approval. Those have nothing left to send,
+  /// but the seller should still see them (with their status) until an admin
+  /// matches them to a product.
+  List<ProductRequestItem> get visibleRequestItems => _productRequestItems
+      .where((item) =>
+          item.unsentQuantity > 0 ||
+          (item.isUnknownUpc && item.lineStatus == 'PENDING_UNKNOWN'))
+      .toList();
+
+  /// True when the stream has scanned lines but every one is already sent —
+  /// lets the list say "all sent" instead of "nothing added yet".
+  bool get allProductRequestsSent =>
+      _productRequestItems.isNotEmpty && visibleRequestItems.isEmpty;
 
   final RxBool _isLoadingProductRequests = false.obs;
   bool get isLoadingProductRequests => _isLoadingProductRequests.value;
@@ -96,6 +119,13 @@ class StreamListController extends GetxController {
   /// pre-fill the "add unknown product" request.
   final RxnString _lastScannedUpc = RxnString();
   String? get lastScannedUpc => _lastScannedUpc.value;
+
+  /// The line the last successful scan created or incremented, and whether it
+  /// was `incremented` (same product scanned again) — for the quantity toast.
+  ProductRequestItem? _lastScanItem;
+  ProductRequestItem? get lastScanItem => _lastScanItem;
+  bool _lastScanIncremented = false;
+  bool get lastScanIncremented => _lastScanIncremented;
 
   // ---------- Create stream: categories, thumbnail, submit ----------
 
@@ -603,7 +633,16 @@ class StreamListController extends GetxController {
     }
   }
 
-  /// Loads the scheduled-streams list backing the "Assign to live" tab.
+  /// Statuses a product can be assigned to from the "Assign to live" tab: a
+  /// stream that is on air right now, or one planned for later.
+  static const assignableStatuses = ['LIVE', 'SCHEDULED'];
+
+  /// Loads the live + scheduled streams backing the "Assign to live" tab.
+  ///
+  /// One request per entry in [statuses], run in parallel and merged in that
+  /// order — live streams first, so the one on air sits at the top of the
+  /// picker. The whole load fails if any request fails, rather than showing a
+  /// half list the seller can't tell is incomplete.
   ///
   /// [silent] makes it a background sync: the loading flag is never raised (so
   /// no spinner replaces a list the seller is already using) and a failure
@@ -611,7 +650,7 @@ class StreamListController extends GetxController {
   /// keeps showing the last good data instead of an error the seller never
   /// asked for. Used by the bottom bar, which re-syncs on every Products tap.
   Future<bool> fetchStreamsByStatus({
-    required String status,
+    List<String> statuses = assignableStatuses,
     bool refresh = false,
     bool silent = false,
   }) async {
@@ -634,50 +673,59 @@ class StreamListController extends GetxController {
     }
 
     try {
-      final response = await _api.get(
-        '${EnvConfig.baseUrl}/api/v1/seller/streams?status=$status',
-        headers: AuthService.instance.authHeaders,
-      );
+      final responses = await Future.wait(statuses.map(
+        (status) => _api.get(
+          '${EnvConfig.baseUrl}/api/v1/seller/streams?status=$status',
+          headers: AuthService.instance.authHeaders,
+        ),
+      ));
 
-      if (response.isSuccess) {
-        final body = response.json;
-        if (body['success'] == true && body['data'] is Map) {
-          final data = body['data'] as Map<String, dynamic>;
-          final items = (data['items'] as List)
-              .map((e) => StreamModel.fromJson(e as Map<String, dynamic>))
-              .toList();
-          if (refresh) {
-            _scheduledStreams.assignAll(items);
-            // Re-point the current selection at its fresh instance (matched by
-            // id) so the dropdown value stays valid after the list is replaced.
-            final prevId = selectedStream.value?.id;
-            if (prevId != null) {
-              StreamModel? match;
-              for (final s in items) {
-                if (s.id == prevId) {
-                  match = s;
-                  break;
-                }
-              }
-              selectedStream.value = match;
-            }
-          } else {
-            _scheduledStreams.addAll(items);
+      final items = <StreamModel>[];
+      final seen = <String>{};
+      for (final response in responses) {
+        if (!response.isSuccess) {
+          if (!silent) {
+            _scheduledError.value =
+                'Could not load streams: ${response.statusCode}';
           }
-          // A silent sync that succeeds still clears a stale error banner left
-          // by an earlier visible load.
-          _scheduledError.value = null;
-          return true;
+          return false;
         }
-        if (!silent) _scheduledError.value = 'Unexpected response format.';
-        return false;
+        final body = response.json;
+        if (body['success'] != true || body['data'] is! Map) {
+          if (!silent) _scheduledError.value = 'Unexpected response format.';
+          return false;
+        }
+        final data = body['data'] as Map<String, dynamic>;
+        for (final e in (data['items'] as List? ?? const [])) {
+          final stream = StreamModel.fromJson(e as Map<String, dynamic>);
+          // A stream that goes live between the two requests can come back
+          // in both; keep the first (live) copy.
+          if (seen.add(stream.id)) items.add(stream);
+        }
       }
 
-      if (!silent) {
-        _scheduledError.value =
-            'Could not load streams: ${response.statusCode}';
+      if (refresh) {
+        _scheduledStreams.assignAll(items);
+        // Re-point the current selection at its fresh instance (matched by
+        // id) so the picker value stays valid after the list is replaced.
+        final prevId = selectedStream.value?.id;
+        if (prevId != null) {
+          StreamModel? match;
+          for (final s in items) {
+            if (s.id == prevId) {
+              match = s;
+              break;
+            }
+          }
+          selectedStream.value = match;
+        }
+      } else {
+        _scheduledStreams.addAll(items);
       }
-      return false;
+      // A silent sync that succeeds still clears a stale error banner left
+      // by an earlier visible load.
+      _scheduledError.value = null;
+      return true;
     } catch (e) {
       log('Scheduled stream fetch error: $e');
       if (!silent) _scheduledError.value = 'Network error. Please try again.';
@@ -695,6 +743,8 @@ class StreamListController extends GetxController {
     if (_isProductUploading.value) return false;
     _isProductUploading.value = true;
     _errorMessage.value = null;
+    _lastScanItem = null;
+    _lastScanIncremented = false;
 
     try {
       final response = await _api.post(
@@ -707,6 +757,12 @@ class StreamListController extends GetxController {
       if (response.isSuccess) {
         final body = response.json;
         if (body['success'] == true && body['data'] is Map) {
+          final data = body['data'] as Map;
+          _lastScanIncremented = data['action'] == 'incremented';
+          final item = data['item'];
+          if (item is Map<String, dynamic>) {
+            _lastScanItem = ProductRequestItem.fromJson(item);
+          }
           final streamId = selectedStream.value?.id;
           if (streamId != null) {
             await fetchProductRequests(streamId);
@@ -715,21 +771,15 @@ class StreamListController extends GetxController {
         }
         _errorMessage.value = 'Unexpected response format.';
         return false;
-      }else{
-        final body = response.json;
-        Map<String,dynamic>? error =body["error"];
-        if(error!=null){
-          String? errorMessage=error['code'];
-          if(errorMessage!=null){
-            if(errorMessage=="PRODUCT_NOT_FOUND_IN_CATALOG"){
-              _isProductNotFoundByScan.value=true;
-              _lastScannedUpc.value = upc;
-            }
-          }
-        }
+      } else if (_apiErrorCode(response) == 'PRODUCT_NOT_FOUND_IN_CATALOG') {
+        _isProductNotFoundByScan.value = true;
+        _lastScannedUpc.value = upc;
       }
 
-      _errorMessage.value = 'Could not load streams: ${response.statusCode}';
+      // The server's own wording, e.g. "This stream is no longer open for
+      // product requests (ended or cancelled)."
+      _errorMessage.value = _apiErrorMessage(response) ??
+          'Could not add product (${response.statusCode}).';
       return false;
     } catch (e) {
       log('Stream fetch error: $e');
@@ -758,65 +808,147 @@ class StreamListController extends GetxController {
     await fetchProductRequests(stream.id);
   }
 
-  // ---------- Send to auction queue ----------
-
-  final _queueDispatch = AuctionQueueDispatchService();
+  // ---------- Send to live (submit the product request) ----------
 
   final RxBool _isSendingToQueue = false.obs;
   bool get isSendingToQueue => _isSendingToQueue.value;
 
-  /// The products currently assigned to the selected stream that the auction
-  /// queue will actually accept — real catalog products only.
-  ///
-  /// A hand-added unknown-UPC row has no catalog `productId` yet (it exists as
-  /// a product *request* until an admin resolves it), and the queue endpoint
-  /// keys on product ids, so those rows are excluded rather than posted as
-  /// empty ids the server would reject.
-  List<String> get queueableProductIds {
-    final ids = <String>{};
-    for (final item in _productRequestItems) {
-      if (item.isUnknownUpc) continue;
-      if (item.productId.isEmpty) continue;
-      ids.add(item.productId);
-    }
-    return ids.toList();
-  }
+  /// Units "Send to live" would add to stock right now (known products).
+  int get unsentUnits => productRequestItems
+      .where((item) => !item.isUnknownUpc)
+      .fold(0, (sum, item) => sum + item.unsentQuantity);
 
-  /// Rows that can't be queued — surfaced so the seller is told what was left
-  /// behind instead of silently sending fewer products than they can see.
-  int get unqueueableCount =>
-      _productRequestItems.length - queueableProductIds.length;
+  /// Unknown-UPC lines among the unsent ones — sent for admin approval, not
+  /// to the queue.
+  int get unsentUnknownCount =>
+      productRequestItems.where((item) => item.isUnknownUpc).length;
 
-  /// Sends every queueable product assigned to the selected stream to that
-  /// stream's auction queue (`POST …/auction-room/queue`, batch form — the same
-  /// endpoint the room's own multi-select add uses).
+  /// "Send to live": submits the stream's product request
+  /// (`PATCH …/streams/{streamId}/product-requests/{requestId}`,
+  /// `{action: "submit"}`).
   ///
-  /// Safe to call from outside the auction room: it claims a one-shot session
-  /// for the mutation instead of booting the room's camera / RTM / WebSocket
-  /// stack. See [AuctionQueueDispatchService].
-  Future<QueueDispatchResult> sendProductsToAuctionQueue({
-    String auctionType = 'NORMAL',
-  }) async {
+  /// The server, in one go: adds each known line's new units to the
+  /// product's shared stock (exactly once per unit — a retry adds nothing),
+  /// marks the lines `RESERVED`, sends unknown lines for admin approval, and
+  /// puts the known products in the stream's auction queue. The queue holds
+  /// one entry per product and each lot sold takes one unit of stock, so two
+  /// scans of a product means it can be auctioned twice.
+  ///
+  /// Afterwards the queue catalog is read to confirm the products really are
+  /// queued (the server's enqueue is best effort), and the list is refreshed
+  /// from the server — sent lines drop out of it.
+  Future<SendToLiveResult> submitToLive() async {
     if (_isSendingToQueue.value) {
-      return const QueueDispatchResult.failed('Already sending — one moment.');
+      return const SendToLiveResult.failed('Already sending — one moment.');
     }
     final stream = selectedStream.value;
     if (stream == null) {
-      return const QueueDispatchResult.failed('Select a stream first.');
+      return const SendToLiveResult.failed('Select a stream first.');
     }
 
     _isSendingToQueue.value = true;
     try {
-      return await _queueDispatch.send(
-        streamId: stream.id,
-        productIds: queueableProductIds,
-        auctionType: auctionType,
-        skipped: unqueueableCount,
+      var requestId = _productRequestId.value;
+      if (requestId == null) {
+        await fetchProductRequests(stream.id);
+        requestId = _productRequestId.value;
+      }
+      // Snapshot what's being sent: a scan landing mid-request isn't part of
+      // this submit's summary.
+      final sent = productRequestItems;
+      if (requestId == null || sent.isEmpty) {
+        return const SendToLiveResult.failed('Add a product first.');
+      }
+
+      final response = await _api.patch(
+        '${EnvConfig.baseUrl}/api/v1/seller/streams/${stream.id}/product-requests/$requestId',
+        headers: AuthService.instance.authHeaders,
+        body: const {'action': 'submit'},
       );
+      log('[send-to-live] PATCH request=$requestId -> ${response.statusCode}');
+
+      if (!response.isSuccess) {
+        // Refresh so a stale list (request cancelled, lines removed on
+        // another device) doesn't invite the same failing submit again.
+        if (selectedStream.value?.id == stream.id) {
+          unawaited(fetchProductRequests(stream.id));
+        }
+        return SendToLiveResult.failed(_apiErrorMessage(response) ??
+            'Could not send to live (${response.statusCode}).');
+      }
+
+      // The response is the refreshed request detail; show it straight away
+      // (lines are now RESERVED / PENDING_UNKNOWN and drop out of the list).
+      if (selectedStream.value?.id == stream.id) {
+        if (!_applyRequestDetail(response)) {
+          await fetchProductRequests(stream.id);
+        }
+      }
+
+      List<CatalogProduct>? catalog;
+      try {
+        catalog = await AuctionRoomApi().queueCatalog(stream.id);
+      } catch (e) {
+        log('[send-to-live] queue check failed: $e');
+      }
+      return SendToLiveResult.summarize(sent, catalog: catalog);
+    } catch (e) {
+      log('Send to live error: $e');
+      return const SendToLiveResult.failed('Network error. Please try again.');
     } finally {
       _isSendingToQueue.value = false;
     }
   }
+
+  /// Loads the items from a request-detail response body into the list.
+  /// False when the body isn't a detail (so the caller re-fetches instead).
+  bool _applyRequestDetail(ApiResponse response) {
+    try {
+      final body = response.json;
+      final data = body['data'];
+      if (body['success'] != true || data is! Map<String, dynamic>) {
+        return false;
+      }
+      final items = data['items'];
+      if (items is! List) return false;
+      _productRequestItems.assignAll(items
+          .whereType<Map<String, dynamic>>()
+          .map(ProductRequestItem.fromJson));
+      final id = data['id'];
+      if (id is String && id.isNotEmpty) _productRequestId.value = id;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// `DELETE …/streams/{streamId}/product-requests/items/{itemId}`. True when
+  /// the server confirms the row is gone.
+  Future<bool> _deleteItemOnServer(String streamId, String itemId) async {
+    try {
+      final response = await _api.delete(
+        '${EnvConfig.baseUrl}/api/v1/seller/streams/$streamId/product-requests/items/$itemId',
+        headers: AuthService.instance.authHeaders,
+      );
+      if (!response.isSuccess) {
+        _lastDeleteError = _apiErrorMessage(response) ??
+            'Could not delete product (${response.statusCode}).';
+        return false;
+      }
+      // A 204 has an empty body; only parse JSON when there's something to read.
+      return response.statusCode == 204 ||
+          response.body.trim().isEmpty ||
+          response.json['success'] == true;
+    } catch (e) {
+      log('Delete product request item error: $e');
+      _lastDeleteError = 'Network error. Please try again.';
+      return false;
+    }
+  }
+
+  /// Error from the last failed [_deleteItemOnServer], for callers that
+  /// surface it.
+  String? _lastDeleteError;
 
   /// 1) Fetch the product-request list for the stream and grab the first
   ///    request's id, then 2) fetch that request's detail to get the items.
@@ -877,6 +1009,9 @@ class StreamListController extends GetxController {
         headers: AuthService.instance.authHeaders,
       );
 
+      log('[product-issue] GET item=$itemId -> '
+          '${response.statusCode} ${response.body}');
+
       if (!response.isSuccess) return null;
 
       final body = response.json;
@@ -905,6 +1040,18 @@ class StreamListController extends GetxController {
     }
   }
 
+  /// The API's `error.code`, or null when the body has none.
+  String? _apiErrorCode(ApiResponse response) {
+    try {
+      final error = response.json['error'];
+      if (error is Map<String, dynamic>) {
+        final code = error['code'];
+        if (code is String && code.isNotEmpty) return code;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Extracts a human-readable `error.message` from an API response body,
   /// or null when the body has no such field.
   String? _apiErrorMessage(ApiResponse response) {
@@ -923,10 +1070,11 @@ class StreamListController extends GetxController {
   /// error message (when present) is stored in [errorMessage].
   Future<String?> uploadProductRequestIssueImage(String filePath) async {
     try {
+      final uploadPath = await ImageCompressor.compress(filePath);
       final response = await _api.uploadFile(
         '${EnvConfig.baseUrl}/api/v1/seller/product-request-issue-images',
         fieldName: 'file',
-        filePath: filePath,
+        filePath: uploadPath,
         headers: AuthService.instance.authHeaders,
       );
 
@@ -952,17 +1100,19 @@ class StreamListController extends GetxController {
 
   /// Reports/updates the discrepancy issue for a product-request item.
   ///
-  /// When [imagePaths] is non-empty each file is uploaded first and the
-  /// resulting `s3Key`s are sent as `imageKeys`. When empty, only the message
-  /// is sent.
+  /// [existingImageKeys] are the photos already on the report; each file in
+  /// [imagePaths] is uploaded first and its `s3Key` appended. Both go as
+  /// `imageKeys`, since the PATCH replaces the set — omitting the existing
+  /// ones would drop them.
   Future<bool> submitProductRequestItemIssue({
     required String itemId,
     required String message,
+    List<String> existingImageKeys = const [],
     List<String> imagePaths = const [],
   }) async {
     _errorMessage.value = null;
     try {
-      final imageKeys = <String>[];
+      final imageKeys = <String>[...existingImageKeys];
       for (final path in imagePaths) {
         final key = await uploadProductRequestIssueImage(path);
         if (key == null) {
@@ -973,16 +1123,19 @@ class StreamListController extends GetxController {
         imageKeys.add(key);
       }
 
-      final body = <String, dynamic>{'message': message};
-      if (imageKeys.isNotEmpty) {
-        body['imageKeys'] = imageKeys;
-      }
+      final body = <String, dynamic>{
+        'message': message,
+        'imageKeys': imageKeys,
+      };
 
       final response = await _api.patch(
         '${EnvConfig.baseUrl}/api/v1/seller/product-requests/items/$itemId/issue',
         headers: AuthService.instance.authHeaders,
         body: body,
       );
+
+      debugPrint('[product-issue] PATCH item=$itemId sent=$body -> '
+          'status=${response.statusCode} body=${response.body}');
 
       if (response.isSuccess) return true;
 
@@ -996,7 +1149,7 @@ class StreamListController extends GetxController {
     }
   }
 
-  /// Sets the product's shipping tier (79 / 99 / 129 / 169 / 249 NOK) via
+  /// Sets the product's shipping amount (one of `GET /seller/shipping-options`) via
   /// `PUT /seller/products/{productId}/shipping`. The product must sit on a
   /// product request for one of the seller's own streams.
   ///
@@ -1115,32 +1268,16 @@ class StreamListController extends GetxController {
 
     _deletingItemIds.add(itemId);
     _errorMessage.value = null;
+    _lastDeleteError = null;
 
     try {
-      final response = await _api.delete(
-        '${EnvConfig.baseUrl}/api/v1/seller/streams/$streamId/product-requests/items/$itemId',
-        headers: AuthService.instance.authHeaders,
-      );
-
-      if (response.isSuccess) {
-        // A 204 has an empty body; only parse JSON when there's something to read.
-        final ok = response.statusCode == 204 ||
-            response.body.trim().isEmpty ||
-            response.json['success'] == true;
-        if (ok) {
-          _productRequestItems.removeWhere((item) => item.id == itemId);
-          _deletingItemIds.remove(itemId);
-          await fetchProductRequests(streamId);
-          return true;
-        }
+      if (await _deleteItemOnServer(streamId, itemId)) {
+        _productRequestItems.removeWhere((item) => item.id == itemId);
+        _deletingItemIds.remove(itemId);
+        await fetchProductRequests(streamId);
+        return true;
       }
-
-      _errorMessage.value = _apiErrorMessage(response) ??
-          'Could not delete product (${response.statusCode}).';
-      return false;
-    } catch (e) {
-      log('Delete product request item error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      _errorMessage.value = _lastDeleteError ?? 'Could not delete product.';
       return false;
     } finally {
       _deletingItemIds.remove(itemId);

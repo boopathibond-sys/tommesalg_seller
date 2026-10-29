@@ -5,12 +5,13 @@ import '../../controllers/auth_controller.dart';
 import '../../core/config/get_or_put.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
+import 'reset_password_view.dart';
 import 'widgets/auth_text_field.dart';
 import 'widgets/primary_login_button.dart';
 import '../../core/localization/translation_keys.dart';
 
-/// Step 1 of the password reset: collect the email and ask the buyer backend
-/// to send the recovery link.
+/// Step 1 of the password reset: collect the email and ask the backend to
+/// email a numeric reset code, then move on to [ResetPasswordView] to enter it.
 ///
 /// Anti-enumeration: whatever the backend returns, a successful request shows
 /// the same generic "if an account exists…" message — we never reveal whether
@@ -32,7 +33,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     super.dispose();
   }
 
-  Future<void> _onSendLink() async {
+  Future<void> _onSendCode() async {
     final email = _emailCtrl.text.trim();
 
     // Capture before the await so we don't touch a stale BuildContext after.
@@ -53,14 +54,17 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       return;
     }
 
-    // Generic, account-agnostic confirmation, then back to login.
+    // Generic, account-agnostic confirmation, then on to the code step. The
+    // code arrives by email — there is no deep link to wait for.
     messenger.showSnackBar(
       _snack(
         TKeys.authResetLinkSent.trParams({'email': email}),
         AppColors.brandNavy,
       ),
     );
-    navigator.maybePop();
+    navigator.pushReplacement(
+      MaterialPageRoute(builder: (_) => ResetPasswordView(email: email)),
+    );
   }
 
   SnackBar _snack(String message, Color background) => SnackBar(
@@ -138,7 +142,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
               Obx(() => PrimaryLoginButton(
                     label: TKeys.authSendResetLink.tr,
                     busy: _authCtrl.isLoading,
-                    onPressed: _authCtrl.isLoading ? null : _onSendLink,
+                    onPressed: _authCtrl.isLoading ? null : _onSendCode,
                   )),
             ],
           ),

@@ -10,6 +10,7 @@ import '../../models/stream_analytics.dart';
 import '../../models/stream_model.dart';
 import '../../core/localization/translation_keys.dart';
 import 'package:get/get.dart';
+import '../../core/utils/currency.dart';
 
 /// Post-mortem for a finished (or admin-rejected) stream: status, real
 /// broadcast duration, viewer peaks, every auctioned product, the money
@@ -526,12 +527,12 @@ class _StreamAnalyticsViewState extends State<StreamAnalyticsView> {
     return v.toStringAsFixed(2);
   }
 
-  String _kr(num v) => '${v.toStringAsFixed(2)} kr';
+  String _kr(num v) => formatNok(v);
 }
 
 String _two(int v) => v.toString().padLeft(2, '0');
 
-String _kr(num v) => '${v.toStringAsFixed(2)} kr';
+String _kr(num v) => formatNok(v);
 
 String _formatStamp(DateTime dt) {
   final months = [

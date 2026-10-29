@@ -2,48 +2,59 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../controllers/auth_controller.dart';
+import '../../core/services/social_auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
-import 'applicant_identify_view.dart';
 import 'become_seller_view.dart';
 import 'forgot_password_view.dart';
 import 'post_login_gate.dart';
-import 'verify_code_view.dart';
-import 'widgets/auth_method_toggle.dart';
 import 'widgets/auth_text_field.dart';
 import 'widgets/login_illustration.dart';
 import 'widgets/primary_login_button.dart';
+import 'widgets/social_login_button.dart';
 import '../../core/localization/translation_keys.dart';
 
 class LoginView extends StatefulWidget {
-  const LoginView({super.key});
+  const LoginView({super.key, this.runSellerGateOnOpen = false});
+
+  /// A session already exists but hasn't passed the seller gate — an Android
+  /// Google / Apple sign-in the splash finished after a cold start. Runs the
+  /// gate as soon as the screen is up.
+  final bool runSellerGateOnOpen;
 
   @override
   State<LoginView> createState() => _LoginViewState();
 }
 
 class _LoginViewState extends State<LoginView> {
+  /// Apple comes back from the backend callback as `auth_failed /
+  /// code_exchange_failed` until the backend fix lands (sign-in guide §1-2),
+  /// so its button stays hidden. Flip once Apple works end to end — App Store
+  /// guideline 4.8 expects it alongside Google.
+  static const bool _appleSignInEnabled = false;
+
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
   final _authCtrl = Get.put(AuthController());
 
-  LoginMethod _method          = LoginMethod.password;
-  bool        _passwordVisible = false;
+  bool _passwordVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.runSellerGateOnOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) runSellerGate(context);
+      });
+    }
+  }
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _onPrimaryCta() async {
-    if (_method == LoginMethod.password) {
-      await _loginWithPassword();
-      return;
-    }
-    await _sendLoginCode();
   }
 
   Future<void> _loginWithPassword() async {
@@ -67,33 +78,20 @@ class _LoginViewState extends State<LoginView> {
     await runSellerGate(context);
   }
 
-  /// Step 1 of email-code login: mail the 6-digit code, then hand off to
-  /// [VerifyCodeView]. It's a pushed route rather than a swapped-out card, so
-  /// the system back button (and the app bar arrow) returns here with the
-  /// email still typed in.
-  Future<void> _sendLoginCode() async {
-    final email = _emailCtrl.text.trim();
-
-    if (email.isEmpty) {
-      showAuthError(context, TKeys.authEnterEmail.tr);
-      return;
-    }
-
-    final sent = await _authCtrl.sendLoginCode(email: email);
-
+  /// Google / Apple: browser sign-in, then the same seller gate as password
+  /// login — a new federated identity is only a buyer, so the gate is what
+  /// keeps it out. A cancel is silent.
+  Future<void> _loginWithSocial(SocialProvider provider) async {
+    final success = await _authCtrl.socialLogin(provider);
     if (!mounted) return;
 
-    if (!sent) {
-      showAuthError(
-        context,
-        _authCtrl.errorMessage ?? TKeys.authCodeSendFailed.tr,
-      );
+    if (!success) {
+      final message = _authCtrl.errorMessage;
+      if (message != null) showAuthError(context, message);
       return;
     }
 
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => VerifyCodeView(email: email)),
-    );
+    await runSellerGate(context);
   }
 
   /// Straight to the application form — no sign-in, no session. The submit
@@ -106,17 +104,6 @@ class _LoginViewState extends State<LoginView> {
       ),
     );
   }
-
-  /// Checking an existing application *does* need a token — it's keyed to the
-  /// account that applied — so that path identifies by e-mail code first.
-  void _openStatusCheck() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ApplicantIdentifyView()),
-    );
-  }
-
-  String get _ctaLabel =>
-      _method == LoginMethod.password ? TKeys.authLogIn.tr : TKeys.authSendLoginCode.tr;
 
   @override
   Widget build(BuildContext context) {
@@ -166,20 +153,10 @@ class _LoginViewState extends State<LoginView> {
           ),
 
           const SizedBox(height: 18),
-          _ApplicantEntry(
-            onApply: _openApplication,
-            onStatus: _openStatusCheck,
-          ),
+          _ApplicantEntry(onApply: _openApplication),
 
           const SizedBox(height: 18),
           const _BusinessOnlyBadge(),
-
-          const SizedBox(height: 22),
-
-          AuthMethodToggle(
-            method: _method,
-            onChanged: (m) => setState(() => _method = m),
-          ),
 
           const SizedBox(height: 22),
 
@@ -199,81 +176,87 @@ class _LoginViewState extends State<LoginView> {
             autofillHints: const [AutofillHints.email],
           ),
 
-          if (_method == LoginMethod.password) ...[
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                CustomText(
-                  TKeys.passwordCaps.tr,
-                  fontSize: 11,
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              CustomText(
+                TKeys.passwordCaps.tr,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.4,
+                color: AppColors.textSecondary,
+              ),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ForgotPasswordView(),
+                  ),
+                ),
+                child: CustomText(
+                  TKeys.authForgotPassword.tr,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 1.4,
-                  color: AppColors.textSecondary,
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ForgotPasswordView(),
-                    ),
-                  ),
-                  child: CustomText(
-                    TKeys.authForgotPassword.tr,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.accent,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            AuthTextField(
-              controller: _passwordCtrl,
-              icon: Icons.lock_outline_rounded,
-              hint: '••••••••',
-              obscure: !_passwordVisible,
-              autofillHints: const [AutofillHints.password],
-              suffix: GestureDetector(
-                onTap: () =>
-                    setState(() => _passwordVisible = !_passwordVisible),
-                child: Icon(
-                  _passwordVisible
-                      ? Icons.visibility_rounded
-                      : Icons.visibility_off_rounded,
-                  size: 18,
-                  color: AppColors.textSecondary,
+                  color: AppColors.accent,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          AuthTextField(
+            controller: _passwordCtrl,
+            icon: Icons.lock_outline_rounded,
+            hint: '••••••••',
+            obscure: !_passwordVisible,
+            autofillHints: const [AutofillHints.password],
+            suffix: GestureDetector(
+              onTap: () =>
+                  setState(() => _passwordVisible = !_passwordVisible),
+              child: Icon(
+                _passwordVisible
+                    ? Icons.visibility_rounded
+                    : Icons.visibility_off_rounded,
+                size: 18,
+                color: AppColors.textSecondary,
+              ),
             ),
-          ] else ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 14,
-                  color: AppColors.textMuted,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: CustomText(
-                    TKeys.authCodeByEmail.tr,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    height: 1.4,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
           const SizedBox(height: 22),
 
           Obx(() => PrimaryLoginButton(
-                label: _ctaLabel,
+                label: TKeys.authLogIn.tr,
                 busy: _authCtrl.isLoading,
-                onPressed: _authCtrl.isLoading ? null : _onPrimaryCta,
+                onPressed: _authCtrl.isBusy ? null : _loginWithPassword,
               )),
+
+          const SizedBox(height: 18),
+          const _OrDivider(),
+          const SizedBox(height: 18),
+          Obx(() {
+            final busy = _authCtrl.socialBusy;
+            VoidCallback? start(SocialProvider p) =>
+                _authCtrl.isBusy ? null : () => _loginWithSocial(p);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SocialLoginButton(
+                  style: SocialButtonStyle.google,
+                  label: TKeys.authContinueGoogle.tr,
+                  busy: busy == SocialProvider.google,
+                  onPressed: start(SocialProvider.google),
+                ),
+                if (_appleSignInEnabled) ...[
+                  const SizedBox(height: 12),
+                  SocialLoginButton(
+                    style: SocialButtonStyle.apple,
+                    label: TKeys.authContinueApple.tr,
+                    busy: busy == SocialProvider.apple,
+                    onPressed: start(SocialProvider.apple),
+                  ),
+                ],
+              ],
+            );
+          }),
 
           const SizedBox(height: 14),
           const _StaySignedInNote(),
@@ -287,11 +270,35 @@ class _LoginViewState extends State<LoginView> {
   }
 }
 
+/// "──── OR ────" between password login and the social buttons.
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(child: Divider(color: AppColors.borderGrey, height: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: CustomText(
+            TKeys.authOrCaps.tr,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const Expanded(child: Divider(color: AppColors.borderGrey, height: 1)),
+      ],
+    );
+  }
+}
+
 /// Sets the expectation the session layer now delivers: sign in once and the
 /// app restores the session on every later launch, until the seller signs out
 /// (or the session is revoked server-side). Nothing about the password is
-/// kept on the device — the Supabase client persists the session and rotates
-/// its tokens.
+/// kept on the device — only the session tokens, in the Keychain / Keystore.
 class _StaySignedInNote extends StatelessWidget {
   const _StaySignedInNote();
 
@@ -361,15 +368,11 @@ class _BusinessOnlyBadge extends StatelessWidget {
   }
 }
 
-/// The way in for someone who doesn't have a seller account yet: apply, or
-/// come back to see where an application stands. Both push the same screen
-/// with a different [ApplicantIntent] — one flow, two entry labels — so the
-/// status check is one tap from login.
+/// The way in for someone who doesn't have a seller account yet: apply.
 class _ApplicantEntry extends StatelessWidget {
-  const _ApplicantEntry({required this.onApply, required this.onStatus});
+  const _ApplicantEntry({required this.onApply});
 
   final VoidCallback onApply;
-  final VoidCallback onStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -399,14 +402,6 @@ class _ApplicantEntry extends StatelessWidget {
           subtitle: TKeys.authBecomeSellerSub.tr,
           onTap: onApply,
         ),
-        // Status check is parked for now — uncomment to bring it back.
-        // const SizedBox(height: 10),
-        // _EntryCard(
-        //   icon: Icons.schedule_rounded,
-        //   title: 'Check application status',
-        //   subtitle: 'Already applied? See where it stands',
-        //   onTap: onStatus,
-        // ),
       ],
     );
   }

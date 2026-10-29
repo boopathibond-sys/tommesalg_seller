@@ -76,12 +76,12 @@ class _ControlRequestDialog extends StatelessWidget {
     final title = isPrimaryRequest
         ? TKeys.cdMainDeviceRequest.tr
         : TKeys.cdAuctionControlRequest.tr;
+    // The two handoffs move different things, and the seller has to know
+    // which before saying yes: the main device owns the camera, auction
+    // control owns the queue and the lots.
     final consequence = isPrimaryRequest
-        ? 'Accepting makes that device the main device for this stream. This '
-            'device drops to secondary and stops owning the session.'
-        : 'Accepting hands the auction over to that device — it will run the '
-            'bidding and the queue, and this device will have to ask for '
-            'control back.';
+        ? TKeys.cdMainConsequence.tr
+        : TKeys.cdControlConsequence.tr;
 
     return Dialog(
       backgroundColor: AppColors.white,

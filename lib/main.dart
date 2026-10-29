@@ -7,14 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tommesalg_seller_app/core/config/env_config.dart';
 import 'package:tommesalg_seller_app/core/localization/app_translations.dart';
 import 'package:tommesalg_seller_app/core/localization/localization_service.dart';
 import 'package:tommesalg_seller_app/core/localization/translation_keys.dart';
 import 'package:tommesalg_seller_app/core/services/api_client.dart';
 import 'package:tommesalg_seller_app/core/services/auth_service.dart';
-import 'package:tommesalg_seller_app/core/services/deep_link_service.dart';
+import 'package:tommesalg_seller_app/core/widgets/keyboard_done_bar.dart';
 import 'package:tommesalg_seller_app/controllers/notification_controller.dart';
 import 'package:tommesalg_seller_app/features/notifications/application/notification_router.dart';
 import 'package:tommesalg_seller_app/features/notifications/application/push_destination.dart';
@@ -23,13 +22,18 @@ import 'package:tommesalg_seller_app/views/auth/login_view.dart';
 import 'package:tommesalg_seller_app/views/splash/splash_view.dart';
 
 import 'firebase_options.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Switch to [AppEnvironment.staging] to point the entire app at
+/// https://staging.tommesalg.no; [AppEnvironment.live] uses https://tommesalg.no.
+const AppEnvironment appEnvironment = AppEnvironment.live;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
-  await EnvConfig.init();
+  await EnvConfig.init(environment: appEnvironment);
   // Loads nb/en catalogues and resolves the start locale, so the very first
   // frame already paints in the right language.
   await LocalizationService.init();
@@ -41,31 +45,29 @@ void main() async {
   // permission and makes no network call here: the initial permission prompt
   // happens on the splash, and device registration after sign-in.
   await PushNotificationService.instance.initialize();
-  // Restores any persisted session and turns on automatic token refresh.
-  // Both are SDK defaults — no manual refresh logic required.
-  await Supabase.initialize(
-    url: EnvConfig.supabaseProdUrl,
-    anonKey: EnvConfig.supabaseProdAnonKey,
-  );
+  // Loads the Cognito session (if any) from the Keychain / Keystore, so the
+  // synchronous token getters are populated before the first frame.
   await AuthService.instance.init();
 
-  // Our backend reported the JWT is dead (401 AUTH_EXPIRED). That is not proof
-  // the seller has to sign in again — the access token may just have aged out
-  // while the refresh token is still good — so try one refresh first and only
-  // sign out when that fails. Signing out on every 401 would drop sellers out
-  // of a live auction over a token that was simply due for rotation.
-  ApiClient.instance.onSessionExpired =
-      () => unawaited(AuthService.instance.recoverOrLogout());
+  // Every bearer request goes out with a token that has at least a minute
+  // left; a `401 AUTH_EXPIRED` refreshes once and retries once; a
+  // `401 AUTH_USER_NOT_FOUND` provisions the profile and retries once. Only a
+  // refresh token the backend rejects signs the seller out — never a network
+  // blip, which would drop sellers out of a live auction.
+  final api = ApiClient.instance;
+  api.freshAccessToken = AuthService.instance.ensureAccessToken;
+  api.refreshAccessToken = AuthService.instance.refreshForRetry;
+  api.ensureProfile = AuthService.instance.ensureProfile;
 
   // The signed-in account isn't a seller (any API → AUTH_ROLE_REQUIRED). Sign
   // out and bounce to login; `onSignedOut` handles the actual routing.
   ApiClient.instance.onRoleRequired = () {
-    Get.snackbar(TKeys.accessDeniedTitle.tr, TKeys.accessDeniedBody.tr);
+    AppSnackbar.show(TKeys.accessDeniedTitle.tr, TKeys.accessDeniedBody.tr);
     AuthService.instance.logout();
   };
 
   // The only paths that send the user back to login: a manual logout, or a
-  // refresh-token failure the SDK couldn't recover from.
+  // refresh token the backend no longer accepts.
   //
   // The push teardown here is the *backstop* for forced sign-outs (expired
   // session, wrong role) — by this point the bearer token is gone, so the
@@ -76,10 +78,6 @@ void main() async {
     unawaited(PushNotificationService.instance.onSignedOut());
     _routeToLogin();
   };
-
-  // Listens for the password-recovery deep link, installs the recovery
-  // session, and routes to ResetPasswordView. Idempotent across hot restarts.
-  await DeepLinkService.instance.start();
 
   // Attached (rather than assigned) so the tap that cold-started the app —
   // delivered during `initialize()` above, before this line ran — is replayed
@@ -113,9 +111,8 @@ void _onNotificationTap(RemoteMessage message) {
     log('push: payload carries no destination — staying on the current screen');
     return;
   }
-  unawaited(
-    NotificationRouter.openWith(appNavigatorKey.currentState, destination),
-  );
+  // Queued until Home is on screen — see [NotificationRouter.attachHome].
+  NotificationRouter.openFromPush(destination);
 }
 
 void _routeToLogin() {
@@ -149,6 +146,8 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
+      // iOS-only "Done" bar above the keyboard for every text field.
+      builder: (context, child) => KeyboardDoneBar(child: child!),
       home: const SplashView(),
     );
   }

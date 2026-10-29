@@ -12,6 +12,8 @@ import '../../../core/widgets/auto_quick_view_toggle.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../scanner/barcode_scanner_view.dart';
 import '../../../core/localization/translation_keys.dart';
+import '../../../core/widgets/image_source_picker.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Reusable "assign products to a SKU" panel: a scan card, a UPC field with a
 /// Thrown button, and the list of products added in this session. Used both in
@@ -83,7 +85,7 @@ class _AssignProductsPanelState extends State<AssignProductsPanel> {
     if (_looking) return;
     final trimmed = upc.trim();
     if (trimmed.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.enterUpc.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.enterUpc.tr);
       return;
     }
 
@@ -116,9 +118,9 @@ class _AssignProductsPanelState extends State<AssignProductsPanel> {
           if (AutoQuickViewPref.enabled) {
             widget.onKnownProductAdded?.call(result.productId!);
           }
-          Get.snackbar(TKeys.successTitle.tr, TKeys.stProductAddedToSku.tr);
+          AppSnackbar.show(TKeys.successTitle.tr, TKeys.stProductAddedToSku.tr);
         } else {
-          Get.snackbar(TKeys.errorTitle.tr, error);
+          AppSnackbar.show(TKeys.errorTitle.tr, error);
         }
         break;
       case UpcLookupStatus.notFound:
@@ -128,7 +130,7 @@ class _AssignProductsPanelState extends State<AssignProductsPanel> {
         break;
       case UpcLookupStatus.error:
         setState(() => _looking = false);
-        Get.snackbar(TKeys.errorTitle.tr, result.message ?? TKeys.stSomethingWentWrong.tr);
+        AppSnackbar.show(TKeys.errorTitle.tr, result.message ?? TKeys.stSomethingWentWrong.tr);
         break;
     }
   }
@@ -438,46 +440,6 @@ class _UpcEntryRow extends StatelessWidget {
   }
 }
 
-/// One row in the camera / gallery image-source chooser sheet.
-class _ImageSourceTile extends StatelessWidget {
-  const _ImageSourceTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.inputFill,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.inputBorder),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 22, color: AppColors.brandNavy),
-            const SizedBox(width: 14),
-            CustomText(
-              label,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// An image picked in the manual sheet — the local file (for the thumbnail)
 /// paired with the `s3Key` returned by the upload endpoint.
 class _UploadedImage {
@@ -512,7 +474,6 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
   final TextEditingController _qtyController =
       TextEditingController(text: '1');
   final List<_UploadedImage> _images = [];
-  final ImagePicker _picker = ImagePicker();
 
   /// Number of images currently being uploaded (shows spinner placeholders).
   int _uploading = 0;
@@ -537,16 +498,8 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
   /// Asks the user where to get the image from (camera or gallery), then picks
   /// and uploads. Camera captures a single photo; gallery allows multiple.
   Future<void> _pickImage() async {
-    final source = await _showImageSourceSheet();
-    if (source == null || !mounted) return;
-
-    final List<XFile> picked;
-    if (source == ImageSource.camera) {
-      final shot = await _picker.pickImage(source: ImageSource.camera);
-      picked = shot == null ? const [] : [shot];
-    } else {
-      picked = await _picker.pickMultiImage();
-    }
+    final picked =
+        await ImageSourcePicker.pick(context, title: TKeys.stAddImage.tr);
     if (picked.isEmpty || !mounted) return;
 
     setState(() => _uploading += picked.length);
@@ -560,62 +513,9 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
         }
       });
       if (s3Key == null) {
-        Get.snackbar(TKeys.csUploadFailed.tr, TKeys.stCouldNotUploadNamed.trParams({'name': img.name}));
+        AppSnackbar.show(TKeys.csUploadFailed.tr, TKeys.stCouldNotUploadNamed.trParams({'name': img.name}));
       }
     }
-  }
-
-  /// Bottom sheet offering Camera / Gallery as image sources.
-  Future<ImageSource?> _showImageSourceSheet() {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.inputBorder,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              CustomText(
-                TKeys.stAddImage.tr,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.brandNavy,
-              ),
-              const SizedBox(height: 16),
-              _ImageSourceTile(
-                icon: Icons.photo_camera_outlined,
-                label: TKeys.stTakeAPhoto.tr,
-                onTap: () => Navigator.of(context).pop(ImageSource.camera),
-              ),
-              const SizedBox(height: 12),
-              _ImageSourceTile(
-                icon: Icons.photo_library_outlined,
-                label: TKeys.stChooseFromGallery.tr,
-                onTap: () => Navigator.of(context).pop(ImageSource.gallery),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _removeImageAt(int index) {
@@ -627,17 +527,17 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
 
     final upc = _upcController.text.trim();
     if (upc.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.enterUpc.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.enterUpc.tr);
       return;
     }
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.enterProductName.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.enterProductName.tr);
       return;
     }
     final quantity = int.tryParse(_qtyController.text.trim());
     if (quantity == null || quantity < 1) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.stEnterQuantityOne.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.stEnterQuantityOne.tr);
       return;
     }
 
@@ -662,9 +562,9 @@ class _AssignManualUpcSheetState extends State<_AssignManualUpcSheet> {
           imagePaths: _images.map((e) => e.file.path).toList(),
         ),
       );
-      Get.snackbar(TKeys.successTitle.tr, TKeys.stProductAddedToSku.tr);
+      AppSnackbar.show(TKeys.successTitle.tr, TKeys.stProductAddedToSku.tr);
     } else {
-      Get.snackbar(TKeys.errorTitle.tr, error);
+      AppSnackbar.show(TKeys.errorTitle.tr, error);
     }
   }
 

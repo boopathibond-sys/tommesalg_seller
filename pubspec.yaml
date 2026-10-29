@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.5+22
+version: 1.0.5+23
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -46,8 +46,9 @@ dependencies:
   hive_flutter: ^1.1.0
   image_picker: ^1.0.7
   file_picker: ^12.2.0        # CV upload on the become-a-seller application
-  supabase_flutter: ^2.8.0
-  app_links: ^7.0.0
+  # Keychain / Keystore home of the Cognito session tokens (never
+  # SharedPreferences — see lib/core/services/session_token_store.dart).
+  flutter_secure_storage: ^10.0.0
   url_launcher: ^6.3.2   # Opens the seller's social links in the system browser
 
   # ── Live auction room (seller = broadcaster) ──────────────────────────────
@@ -68,6 +69,11 @@ dependencies:
   firebase_messaging: ^16.4.3          # FCM token + message streams
   flutter_local_notifications: ^22.1.0  # Draws foreground pushes on Android
   device_info_plus: ^13.2.0             # deviceName on the device registration
+  camera: ^0.12.1             # In-app pro camera (lenses, exposure, focus, zoom) for measurement photos
+  flutter_image_compress: ^2.5.1   # Shrinks photos before upload (report + measurement images)
+  wakelock_plus: ^1.8.0
+  app_links: ^6.3.2          # Google / Apple sign-in return link (Android) + cold start
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -134,3 +140,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/custom-fonts/#from-packages
+
+# TEMP: patched device_info_plus 13.2.0 so iOS builds on Xcode 26.0.x
+# (upstream calls isiOSAppOnVision, which needs the iOS 26.1 SDK).
+# Remove this once everyone is on Xcode 26.1+.
+dependency_overrides:
+  device_info_plus:
+    path: third_party/device_info_plus

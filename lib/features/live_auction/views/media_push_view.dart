@@ -8,6 +8,7 @@ import '../controllers/auction_room_controller.dart';
 import '../controllers/media_push_controller.dart';
 import '../data/models/media_push.dart';
 import '../../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Media Push screen — restream the live auction to TikTok, Facebook,
 /// Instagram, YouTube or a custom RTMP target.
@@ -193,7 +194,7 @@ class _MediaPushViewState extends State<MediaPushView> {
   /// replaces it wholesale.
   Future<void> _openForm({int? index}) async {
     if (!ctrl.isPrimary) {
-      Get.snackbar(TKeys.mpMediaPush.tr,
+      AppSnackbar.show(TKeys.mpMediaPush.tr,
           TKeys.mpOnlyPrimaryChange.tr,
           snackPosition: SnackPosition.BOTTOM);
       return;

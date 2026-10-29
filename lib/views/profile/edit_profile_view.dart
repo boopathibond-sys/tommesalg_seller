@@ -11,6 +11,7 @@ import '../auth/widgets/auth_text_field.dart';
 import '../auth/widgets/primary_login_button.dart';
 import 'widgets/social_link_field.dart';
 import '../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Edit screen for the seller's public profile. Pre-fills from the current
 /// [SellerProfile] and PATCHes the changes through [ProfileController].
@@ -114,11 +115,7 @@ class _EditProfileViewState extends State<EditProfileView> {
 
   Future<void> _save() async {
     if (_displayName.text.trim().isEmpty) {
-      Get.snackbar(TKeys.epRequired.tr, TKeys.epDisplayNameEmpty.tr);
-      return;
-    }
-    if (_businessName.text.trim().isEmpty) {
-      Get.snackbar(TKeys.epRequired.tr, TKeys.epBusinessNameEmpty.tr);
+      AppSnackbar.show(TKeys.epRequired.tr, TKeys.epDisplayNameEmpty.tr);
       return;
     }
 
@@ -141,10 +138,10 @@ class _EditProfileViewState extends State<EditProfileView> {
     if (!mounted) return;
 
     if (ok) {
-      Get.snackbar(TKeys.savedTitle.tr, TKeys.epProfileUpdated.tr);
+      AppSnackbar.show(TKeys.savedTitle.tr, TKeys.epProfileUpdated.tr);
       Navigator.of(context).pop(true);
     } else {
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.errorTitle.tr,
         _profileCtrl.errorMessage ?? TKeys.epCouldNotUpdate.tr,
       );
@@ -189,7 +186,7 @@ class _EditProfileViewState extends State<EditProfileView> {
                 hint: TKeys.epDisplayName.tr,
               ),
               const SizedBox(height: 16),
-              _fieldLabel(TKeys.epBusinessName.tr),
+              _fieldLabel('${TKeys.epBusinessName.tr} (${TKeys.optional.tr})'),
               AuthTextField(
                 controller: _businessName,
                 icon: Icons.storefront_outlined,

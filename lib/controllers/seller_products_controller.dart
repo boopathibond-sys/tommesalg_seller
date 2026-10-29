@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:get/get.dart';
@@ -5,20 +6,31 @@ import 'package:get/get.dart';
 import '../core/config/env_config.dart';
 import '../core/services/api_client.dart';
 import '../core/services/auth_service.dart';
+import '../core/services/shipping_options_service.dart';
+import '../models/product_edit_log.dart';
 import '../models/seller_product.dart';
 import '../models/seller_product_detail.dart';
 import '../models/seller_product_preview.dart';
 
-/// Drives the "My Products" tab — the seller's own catalog from
-/// `GET /api/v1/seller/products` (paged: `{ items, page, pageSize, total }`).
+/// Drives the "Mine produkter" tab — the web `/seller/products` page's list
+/// from `GET /api/v1/seller/products` (paged:
+/// `{ items, page, pageSize, total, availableSizes }`): every product the
+/// seller scanned into their own stream requests, across all streams, newest
+/// first and each product once. Products are no longer assigned, so an edit
+/// only goes through while the product sits on a `draft` request (the PATCH
+/// answers `403` otherwise).
 ///
-/// Search and the status filter are applied client-side over the pages loaded
-/// so far, so the seller gets instant feedback while typing; [loadMore] pulls
-/// the next page whenever more rows exist server-side.
+/// Search, status and size are filtered on the server: any change resets to
+/// page 1 and refetches, and a response for an older set of filters is
+/// dropped. [loadMore] pulls the next page while the server has more.
 class SellerProductsController extends GetxController {
   final _api = ApiClient.instance;
 
-  static const int _pageSize = 50;
+  static const int _pageSize = 20;
+
+  /// How long typing in the search box settles before it refetches — keeps
+  /// the list within the endpoint's 60 requests/minute.
+  static const Duration _searchDebounce = Duration(milliseconds: 350);
 
   /// Status values the filter menu offers. `ALL` is the "no filter" sentinel.
   static const List<String> statusOptions = [
@@ -46,6 +58,23 @@ class SellerProductsController extends GetxController {
   final RxString _statusFilter = 'ALL'.obs;
   String get statusFilter => _statusFilter.value;
 
+  /// Size bucket filter; empty = all sizes.
+  final RxString _sizeFilter = ''.obs;
+  String get sizeFilter => _sizeFilter.value;
+
+  /// Size buckets present on the seller's products (server order). Doesn't
+  /// shrink while filtering; empty → the size menu is hidden.
+  final RxList<String> _availableSizes = <String>[].obs;
+  List<String> get availableSizes => _availableSizes;
+
+  /// True when any server filter is set — picks the empty-state wording.
+  bool get hasFilters =>
+      _query.value.trim().isNotEmpty ||
+      _statusFilter.value != 'ALL' ||
+      _sizeFilter.value.isNotEmpty;
+
+  Timer? _searchTimer;
+
   final RxBool _isSavingEdit = false.obs;
   bool get isSavingEdit => _isSavingEdit.value;
 
@@ -54,11 +83,30 @@ class SellerProductsController extends GetxController {
   final RxnString _editError = RxnString();
   String? get editError => _editError.value;
 
+  /// Products whose edit came back `403` — the request line they sit on has
+  /// been submitted, so the form flips to read-only for the rest of the
+  /// session instead of letting the seller fill it in again.
+  final RxSet<String> _editLocked = <String>{}.obs;
+  bool isEditLocked(String id) => _editLocked.contains(id);
+
+  /// Edit history per product id, loaded on demand by [loadEditLogs].
+  final RxMap<String, List<ProductEditLog>> _editLogs =
+      <String, List<ProductEditLog>>{}.obs;
+  List<ProductEditLog>? editLogsFor(String id) => _editLogs[id];
+
   int _page = 1;
   int _total = 0;
 
+  /// Set when a page comes back empty, so paging stops even if `total` and
+  /// the loaded rows disagree.
+  bool _reachedEnd = false;
+
+  /// Bumped by every page-1 load so a page still in flight for an older set
+  /// of filters can't land in the current list (last request wins).
+  int _loadSeq = 0;
+
   /// True while the server still has rows we haven't pulled.
-  bool get hasMore => _products.length < _total;
+  bool get hasMore => !_reachedEnd && _page * _pageSize < _total;
 
   /// Previews (signed image URLs + the richer catalog fields) keyed by product
   /// id. Populated lazily by [imagesFor] / [loadPreview] so each product is
@@ -90,47 +138,58 @@ class SellerProductsController extends GetxController {
     fetchProducts();
   }
 
+  @override
+  void onClose() {
+    _searchTimer?.cancel();
+    super.onClose();
+  }
+
   // ---------- Filtering ----------
 
-  /// The rows the grid renders: loaded products narrowed by the status filter
-  /// and a case-insensitive name/id search.
-  List<SellerProduct> get filteredProducts {
-    final q = _query.value.trim().toLowerCase();
-    final status = _statusFilter.value;
+  /// The rows the grid renders. Filtering happens on the server, so this is
+  /// simply what has been loaded for the current filters.
+  List<SellerProduct> get filteredProducts => _products;
 
-    return _products.where((p) {
-      if (status != 'ALL' && p.status.toUpperCase() != status) return false;
-      if (q.isEmpty) return true;
-      return p.name.toLowerCase().contains(q) || p.id.toLowerCase().contains(q);
-    }).toList();
+  /// Debounced: the refetch fires once typing pauses.
+  void setQuery(String value) {
+    if (value == _query.value) return;
+    _query.value = value;
+    _searchTimer?.cancel();
+    _searchTimer = Timer(_searchDebounce, () => fetchProducts(refresh: true));
   }
 
-  /// Count per status across the loaded rows — drives the filter menu labels.
-  int countFor(String status) {
-    if (status == 'ALL') return _products.length;
-    return _products.where((p) => p.status.toUpperCase() == status).length;
+  void setStatusFilter(String value) {
+    if (value == _statusFilter.value) return;
+    _statusFilter.value = value;
+    fetchProducts(refresh: true);
   }
 
-  void setQuery(String value) => _query.value = value;
-
-  void setStatusFilter(String value) => _statusFilter.value = value;
+  void setSizeFilter(String value) {
+    if (value == _sizeFilter.value) return;
+    _sizeFilter.value = value;
+    fetchProducts(refresh: true);
+  }
 
   void clearFilters() {
+    _searchTimer?.cancel();
     _query.value = '';
     _statusFilter.value = 'ALL';
+    _sizeFilter.value = '';
+    fetchProducts(refresh: true);
   }
 
   // ---------- Fetching ----------
 
-  /// Loads the first page (or reloads it on pull-to-refresh).
+  /// Loads page 1 for the current filters, replacing the list. A newer call
+  /// supersedes one still in flight.
   Future<bool> fetchProducts({bool refresh = false}) async {
-    if (_isLoading.value) return false;
-
+    final seq = ++_loadSeq;
     _isLoading.value = true;
+    _isLoadingMore.value = false;
     if (refresh) _error.value = null;
 
-    final ok = await _loadPage(1, replace: true);
-    _isLoading.value = false;
+    final ok = await _loadPage(1, seq: seq);
+    if (seq == _loadSeq) _isLoading.value = false;
     return ok;
   }
 
@@ -138,23 +197,31 @@ class SellerProductsController extends GetxController {
   Future<void> loadMore() async {
     if (_isLoading.value || _isLoadingMore.value || !hasMore) return;
 
+    final seq = _loadSeq;
     _isLoadingMore.value = true;
-    await _loadPage(_page + 1);
-    _isLoadingMore.value = false;
+    await _loadPage(_page + 1, seq: seq);
+    if (seq == _loadSeq) _isLoadingMore.value = false;
   }
 
-  Future<bool> _loadPage(int page, {bool replace = false}) async {
+  Future<bool> _loadPage(int page, {required int seq}) async {
     try {
+      final query = _query.value.trim();
       final uri = Uri.parse('${EnvConfig.baseUrl}/api/v1/seller/products')
           .replace(queryParameters: {
         'page': '$page',
         'pageSize': '$_pageSize',
+        if (query.isNotEmpty) 'search': query,
+        if (_statusFilter.value != 'ALL') 'status': _statusFilter.value,
+        if (_sizeFilter.value.isNotEmpty) 'size': _sizeFilter.value,
       });
 
       final response = await _api.get(
         uri.toString(),
         headers: AuthService.instance.authHeaders,
       );
+
+      // The filters changed (or a refresh started) while this was loading.
+      if (seq != _loadSeq) return false;
 
       if (response.isSuccess) {
         final body = response.json;
@@ -166,7 +233,7 @@ class SellerProductsController extends GetxController {
               .map(SellerProduct.fromJson)
               .toList();
 
-          if (replace) {
+          if (page == 1) {
             _products.value = parsed;
           } else {
             _products.addAll(parsed);
@@ -174,6 +241,11 @@ class SellerProductsController extends GetxController {
 
           _page = (data['page'] as num?)?.toInt() ?? page;
           _total = (data['total'] as num?)?.toInt() ?? _products.length;
+          _reachedEnd = parsed.isEmpty;
+          final sizes = data['availableSizes'];
+          if (sizes is List) {
+            _availableSizes.value = sizes.map((e) => e.toString()).toList();
+          }
           _error.value = null;
           return true;
         }
@@ -181,11 +253,12 @@ class SellerProductsController extends GetxController {
         return false;
       }
 
-      _error.value = 'Failed to load products: ${response.statusCode}';
+      _error.value = _errorMessage(response) ??
+          'Failed to load products: ${response.statusCode}';
       return false;
     } catch (e) {
       log('Seller products fetch error: $e');
-      _error.value = 'Network error. Please try again.';
+      if (seq == _loadSeq) _error.value = 'Network error. Please try again.';
       return false;
     }
   }
@@ -255,6 +328,10 @@ class SellerProductsController extends GetxController {
     final url = '${EnvConfig.baseUrl}/api/v1/seller/products/'
         '${Uri.encodeComponent(id)}';
 
+    // Fetched alongside the product: the amounts a seller may pick come from
+    // here now, not from the product's `platformShippingSettings`.
+    final shippingOptions = ShippingOptionsService.instance.load();
+
     try {
       log('[ProductDetail] GET $url', name: 'SellerProducts');
 
@@ -273,7 +350,12 @@ class SellerProductsController extends GetxController {
         final body = response.json;
         final data = body['data'];
         if (body['success'] == true && data is Map<String, dynamic>) {
-          final detail = SellerProductDetail.fromData(data);
+          await shippingOptions;
+          final detail = SellerProductDetail.fromData(
+            data,
+            shippingAmountsNok:
+                ShippingOptionsService.instance.fetched?.amountsNok,
+          );
           _details[id] = detail;
           log(
             '[ProductDetail] parsed "${detail.name}" — '
@@ -370,15 +452,14 @@ class SellerProductsController extends GetxController {
   /// `PATCH /api/v1/seller/products/{id}` — applies [changes] to the product.
   ///
   /// [editReason] (1–2000 chars) is mandatory on every call and goes to the
-  /// audit trail, so it's sent even when nothing else is. [changes] should
-  /// carry *only* the fields the seller actually touched — the endpoint treats
-  /// a present key as "set this", so passing untouched values back would log
-  /// them as edits. `category` / `subCategory` / `bidIncrement` /
-  /// `productReferralLink` / `shippingAndReturns` are not accepted and are
-  /// dropped here rather than being rejected server-side.
+  /// audit trail. [changes] should carry *only* the fields the seller actually
+  /// touched — every present key is logged as an edit. The body is strict
+  /// (an unknown key is a `400`), so anything outside [editableFields] is
+  /// dropped here rather than failing the whole save.
   ///
-  /// On success the cached preview and the list row are refreshed so the
-  /// details page and the grid show the new values straight away.
+  /// A `403` means the product's request line is no longer a draft; the id is
+  /// remembered in [isEditLocked]. On success the detail, preview and list are
+  /// re-read so every screen shows the server's own values.
   Future<bool> updateProduct({
     required String productId,
     required String editReason,
@@ -398,7 +479,7 @@ class SellerProductsController extends GetxController {
     try {
       final body = <String, dynamic>{
         for (final entry in changes.entries)
-          if (!_rejectedEditFields.contains(entry.key)) entry.key: entry.value,
+          if (editableFields.contains(entry.key)) entry.key: entry.value,
         'editReason': reason,
       };
 
@@ -417,14 +498,17 @@ class SellerProductsController extends GetxController {
         if (ok) {
           // Pull the authoritative product back rather than patching locally —
           // the server normalises prices, CSV fields and image keys.
-          await loadPreview(productId, force: true);
-          if (_details.containsKey(productId)) {
-            await loadDetail(productId, force: true);
-          }
+          _editLogs.remove(productId);
+          await Future.wait([
+            loadDetail(productId, force: true),
+            loadPreview(productId, force: true),
+          ]);
           await fetchProducts(refresh: true);
           return true;
         }
       }
+
+      if (response.statusCode == 403) _editLocked.add(productId);
 
       _editError.value = _errorMessage(response) ??
           (response.statusCode == 429
@@ -440,14 +524,74 @@ class SellerProductsController extends GetxController {
     }
   }
 
-  /// Fields the edit endpoint rejects outright.
-  static const Set<String> _rejectedEditFields = {
-    'category',
-    'subCategory',
-    'bidIncrement',
-    'productReferralLink',
-    'shippingAndReturns',
+  /// Every key `PATCH /seller/products/{id}` accepts besides `editReason`.
+  /// `sizeType` is accepted but never persisted, so it is left out.
+  static const Set<String> editableFields = {
+    'name',
+    'shortDescription',
+    'description',
+    'brand',
+    'material',
+    'colour',
+    'features',
+    'materialsAndCare',
+    'sku',
+    'upc',
+    'veilPris',
+    'weight',
+    'startingPrice',
+    'bottomPrice',
+    'tags',
+    'size',
+    'usSize',
+    'euSize',
+    'sizesAvailable',
+    'stockCount',
+    'taxonomyNodeId',
+    'imageUrls',
+    'replaceImages',
+    'useDefaultShipping',
+    'shippingPriceNok',
   };
+
+  /// `GET /api/v1/seller/products/{id}/edit-logs` — the latest 200 field
+  /// changes, newest first. Cached per id; [force] re-reads. Returns null on
+  /// failure so the caller can offer a retry.
+  Future<List<ProductEditLog>?> loadEditLogs(
+    String id, {
+    bool force = false,
+  }) async {
+    if (id.isEmpty) return null;
+    if (!force && _editLogs.containsKey(id)) return _editLogs[id];
+
+    try {
+      final response = await _api.get(
+        '${EnvConfig.baseUrl}/api/v1/seller/products/'
+        '${Uri.encodeComponent(id)}/edit-logs',
+        headers: AuthService.instance.authHeaders,
+      );
+
+      if (response.isSuccess) {
+        final body = response.json;
+        final data = body['data'];
+        if (body['success'] == true && data is Map) {
+          final logs = ((data['items'] as List?) ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(ProductEditLog.fromJson)
+              .toList()
+            ..sort((a, b) => (b.createdAt ?? DateTime(0))
+                .compareTo(a.createdAt ?? DateTime(0)));
+          _editLogs[id] = logs;
+          return logs;
+        }
+      }
+      log('Product edit logs failed ($id): ${response.statusCode}');
+      return null;
+    } catch (e) {
+      log('Product edit logs error ($id): $e');
+      return null;
+    }
+  }
 
   /// Uploads one product photo and returns its `s3Key`, or null on failure.
   ///

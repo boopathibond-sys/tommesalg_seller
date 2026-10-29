@@ -2,28 +2,30 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../controllers/auth_controller.dart';
 import '../../controllers/profile_controller.dart';
 import '../../core/config/get_or_put.dart';
 import '../../core/config/session_scope.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/custom_text.dart';
 import '../../features/notifications/application/push_notification_service.dart';
 import '../home/home_view.dart';
+import '../../main.dart' show appNavigatorKey;
 import '../../core/localization/translation_keys.dart';
 
 /// Everything that has to happen *after* a session exists but *before* the
 /// seller is allowed into the app.
 ///
-/// Shared by both sign-in paths — password on `LoginView` and email code on
-/// `VerifyCodeView` — so the role check can't be skipped by whichever screen
-/// happens to authenticate.
+/// Kept separate from `LoginView` so the role check can't be skipped by any
+/// future sign-in path (Google / Apple) that authenticates elsewhere.
 Future<void> runSellerGate(BuildContext context) async {
   final authCtrl = getOrPut(() => AuthController());
 
-  // Gate entry on `GET /api/v1/auth/me` — only sellers may enter. The
-  // endpoint returns 200 for buyers too, so the role decides.
+  // Gate entry on `GET /api/v1/seller/auth/me` — only approved sellers may
+  // enter. A buyer-only account is refused (403 / AUTH_ROLE_REQUIRED).
   final result = await authCtrl.fetchMe();
 
   if (!context.mounted) return;
@@ -59,12 +61,52 @@ void goHome(BuildContext context) {
   // splash already secured it) and registers this handset's FCM token against
   // the account that just signed in. Unawaited — push is an enhancement and
   // must never hold up navigation.
-  unawaited(PushNotificationService.instance.onAuthenticated());
+  unawaited(_setUpPushAfterSignIn());
 
   Navigator.of(context).pushAndRemoveUntil(
     MaterialPageRoute(builder: (_) => const HomeView()),
     (route) => false,
   );
+}
+
+/// Registers for push, then — if notifications are switched off — offers to
+/// open the app's system settings.
+///
+/// The settings prompt is what makes this work on Android 12 and older: there
+/// is no runtime permission dialog there, so a seller who turned notifications
+/// off would otherwise never be asked again. Throttled by
+/// [PushNotificationService.shouldNudgeToSettings] so it doesn't nag on every
+/// sign-in.
+Future<void> _setUpPushAfterSignIn() async {
+  final push = PushNotificationService.instance;
+  await push.onAuthenticated();
+  if (!await push.shouldNudgeToSettings()) return;
+
+  // Let Home finish its route transition before stacking a dialog on it.
+  await Future<void>.delayed(const Duration(milliseconds: 700));
+  final context = appNavigatorKey.currentContext;
+  if (context == null || !context.mounted) return;
+
+  unawaited(push.markSettingsNudged());
+  final open = await showConfirmDialog(
+    context: context,
+    title: TKeys.ntPushOffTitle.tr,
+    message: TKeys.ntPushOffBody.tr,
+    confirmLabel: TKeys.ntOpenSettings.tr,
+    cancelLabel: TKeys.ntNotNow.tr,
+    icon: Icons.notifications_off_outlined,
+    destructive: false,
+  );
+  if (!open) return;
+
+  // Coming back from Settings with notifications switched on should register
+  // the handset straight away, not on the next cold start.
+  late final AppLifecycleListener listener;
+  listener = AppLifecycleListener(onResume: () {
+    listener.dispose();
+    unawaited(push.onAuthenticated());
+  });
+  if (!await openAppSettings()) listener.dispose();
 }
 
 /// Shown when a non-seller (e.g. a buyer) signs in. They can't use the

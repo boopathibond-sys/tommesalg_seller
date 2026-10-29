@@ -13,6 +13,7 @@ import '../widgets/live_chat_overlay.dart';
 import '../widgets/room_sheets.dart';
 import '../widgets/start_auction_sheet.dart';
 import '../../../../core/localization/translation_keys.dart';
+import '../../../../core/utils/currency.dart';
 
 /// The Live tab: a full-bleed camera stage with floating, minimisable overlays.
 ///
@@ -167,7 +168,7 @@ class _LiveTabState extends State<LiveTab> {
                     child: _Banner(
                       icon: Icons.wifi_off_rounded,
                       text: TKeys.ltConnectionLost.tr,
-                      onTap: ctrl.refreshSnapshot,
+                      onTap: ctrl.reconnectRealtime,
                     ),
                   );
                 }),
@@ -367,16 +368,20 @@ class _AuctionDeck extends StatelessWidget {
               // for a second screen.
               content = _ActiveAuctionCard(ctrl: ctrl, auction: active);
             } else if (ctrl.isController) {
-              // Nothing to start until the feed is actually publishing, and the
+              // Nothing to start until the feed is actually on air, and the
               // idle card collapses to nothing then — so does the deck, rather
               // than shading the bottom of the stage for an empty strip. It
               // still holds the home-indicator inset open, which is what keeps
               // the chat field and the rail above it off the screen edge.
-              final publishing =
-                  ctrl.rtcJoined.value && !ctrl.broadcastPaused.value;
-              if (!publishing) return SizedBox(height: bottomInset + 12);
+              //
+              // "On air" differs by device — see [feedOnAir]: a secondary
+              // device running the auction never publishes itself, so its own
+              // RTC join can't be the test.
+              if (!ctrl.feedOnAir) return SizedBox(height: bottomInset + 12);
               content = _IdleCard(ctrl: ctrl, onOpenQueue: onOpenQueue);
             } else {
+              // No auction control here: either a watcher, or the main device
+              // whose camera is on air while another device runs the auction.
               content = _WatchingCard(ctrl: ctrl);
             }
             return Container(
@@ -759,17 +764,69 @@ class _GoLivePill extends StatelessWidget {
           label: TKeys.ltSwitchingRole.tr,
         );
       }
-      // A secondary device can watch the room but must be handed control by
-      // the primary before it can publish — otherwise two phones broadcast
-      // into the same channel. Offer the request instead of a dead Go Live.
-      if (ctrl.needsControl) return _requestControl();
+      // Only the main device has a camera to put on air — otherwise two phones
+      // broadcast into the same channel. A secondary device gets the
+      // auction-control request instead (if it hasn't got control already);
+      // the camera only moves with a main-device handoff from the Devices
+      // sheet.
+      if (!ctrl.isPrimaryDevice) {
+        return ctrl.needsControl ? _requestControl() : const SizedBox.shrink();
+      }
       // Drive the pill by whether we're actually publishing, not the stream's
       // status. Entering the room never auto-publishes, so until the seller
       // taps Go Live (and we join the channel) we always show "Go Live" —
       // even when the stream is already LIVE server-side.
-      if (!ctrl.rtcJoined.value) return _goLive();
+      if (!ctrl.rtcJoined.value) {
+        // Scheduled and not due yet: Go Live stays disabled, with the start
+        // time (or a live countdown in the last two hours) inside the pill.
+        if (ctrl.goLiveLocked) return _scheduledGoLive();
+        return _goLive();
+      }
       return _stopResume();
     });
+  }
+
+  Widget _scheduledGoLive() {
+    final label = ctrl.startsInLabel ?? '';
+    final caption = ctrl.startsSoon
+        ? TKeys.ltStartsIn.trParams({'time': label})
+        : TKeys.ltStartsAt.trParams({'time': label});
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 7, 16, 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.lock_clock_rounded, size: 18, color: Colors.white54),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CustomText(TKeys.ltGoLive.tr,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white54),
+              Text(
+                caption,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color:
+                      ctrl.startsSoon ? AppColors.brandYellow : Colors.white70,
+                  // Fixed-width digits so the pill doesn't jitter each second.
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _requestControl() {
@@ -1349,11 +1406,11 @@ class _BroadcastRail extends StatelessWidget {
                 active: true,
                 onTap: () => showRoomActions(context, ctrl),
               ),
-              // Mic / camera / flip drive *this* device's capture. A watcher
-              // has none — showing them would offer control over a picture
-              // coming from another phone — so a watcher gets the ⋮ and the
+              // Mic / camera / flip drive *this* device's capture, which only
+              // the main device has. A watcher — even one running the auction —
+              // is showing another phone's picture, so it gets the ⋮ and the
               // chevron only.
-              if (ctrl.isController) ...[
+              if (ctrl.isPrimaryDevice && !ctrl.watching.value) ...[
                 _DockControl(
                   icon: ctrl.micMuted.value
                       ? Icons.mic_off_rounded
@@ -1522,10 +1579,10 @@ class _IdleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      // Only allow starting a lot while we're actually publishing to buyers
-      // (gone live, not stopped).
-      final publishing = ctrl.rtcJoined.value && !ctrl.broadcastPaused.value;
-      if (!publishing) return const SizedBox.shrink();
+      // Only allow starting a lot while the picture is on air for buyers —
+      // on a secondary device running the auction, that's the main device's
+      // feed, not this device's (it never publishes). See [feedOnAir].
+      if (!ctrl.feedOnAir) return const SizedBox.shrink();
       // Nothing queued → there is no lot to start, so the note takes the slot
       // outright instead of sitting above a dead button. A disabled "Start
       // auction now" says only that the tap won't work; the note says why and
@@ -1621,9 +1678,10 @@ class _EmptyQueueNote extends StatelessWidget {
 
 /// Stands in for [_IdleCard] on a device that isn't running the auction.
 ///
-/// It says plainly what this device *is* — a second screen onto someone else's
-/// broadcast — and offers the one action that changes that, so the seller is
-/// never left tapping a disabled "Start auction" wondering what is wrong.
+/// It says plainly what this device *is* — a second screen onto the main
+/// device's broadcast, or the main device whose auction is run elsewhere — and
+/// offers the one action that changes that, so the seller is never left
+/// tapping a disabled "Start auction" wondering what is wrong.
 class _WatchingCard extends StatelessWidget {
   const _WatchingCard({required this.ctrl});
   final AuctionRoomController ctrl;
@@ -1646,12 +1704,18 @@ class _WatchingCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CustomText(TKeys.ltWatchingTitle.tr,
+                    CustomText(
+                        ctrl.isPrimaryDevice
+                            ? TKeys.ltControlElsewhereTitle.tr
+                            : TKeys.ltWatchingTitle.tr,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary),
                     const SizedBox(height: 2),
-                    CustomText(TKeys.ltWatchingBody.tr,
+                    CustomText(
+                        ctrl.isPrimaryDevice
+                            ? TKeys.ltControlElsewhereBody.tr
+                            : TKeys.ltWatchingBody.tr,
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
                         color: AppColors.textSecondary),
@@ -1957,14 +2021,21 @@ class _CountdownRing extends StatelessWidget {
               ),
             ),
           ),
-          Text(
-            '$seconds',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: urgent ? AppColors.vipps : Colors.white,
-            ),
-          ),
+          // At zero the lot is closing, not closed: the server settles it and
+          // a late bid can still extend it. An hourglass says "ending" where a
+          // frozen 0 read as the room having hung.
+          if (seconds > 0)
+            Text(
+              '$seconds',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: urgent ? AppColors.vipps : Colors.white,
+              ),
+            )
+          else
+            const Icon(Icons.hourglass_bottom_rounded,
+                size: 18, color: AppColors.vipps),
         ],
       ),
     );
@@ -2124,7 +2195,7 @@ Future<void> _openReduceSheet(
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
-String _kr(num? v) => v == null ? '—' : 'kr ${v % 1 == 0 ? v.toInt() : v}';
+String _kr(num? v) => formatNokOrDash(v);
 
 class _Card extends StatelessWidget {
   const _Card({required this.child, this.padding});

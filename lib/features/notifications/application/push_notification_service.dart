@@ -218,6 +218,34 @@ class PushNotificationService {
     }
   }
 
+  static const _settingsNudgeKey = 'push.settings_nudge_at';
+  static const _settingsNudgeCooldown = Duration(days: 3);
+
+  /// True when notifications are switched off for the app and the seller
+  /// hasn't been pointed at Settings recently.
+  ///
+  /// Android 12 and older never show a runtime dialog — notifications are on
+  /// at install, and if the seller turns them off in system settings,
+  /// [requestPermission] just reports "denied". The same holds on iOS and
+  /// Android 13+ once the dialog has been declined. In every one of those
+  /// cases the only way back is the app's system settings page.
+  Future<bool> shouldNudgeToSettings() async {
+    if (await hasPermission()) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final last = prefs.getInt(_settingsNudgeKey);
+    if (last == null) return true;
+    final since = DateTime.now()
+        .difference(DateTime.fromMillisecondsSinceEpoch(last));
+    return since >= _settingsNudgeCooldown;
+  }
+
+  /// Starts the [shouldNudgeToSettings] cool-down.
+  Future<void> markSettingsNudged() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+        _settingsNudgeKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
   /// The current permission state without prompting.
   Future<bool> hasPermission() async {
     try {

@@ -5,6 +5,7 @@ import '../../../../core/localization/translation_keys.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/custom_text.dart';
 import '../../data/services/moderation_report_api.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Bottom sheet for flagging user-generated content to the operators.
 ///
@@ -87,7 +88,7 @@ class _ReportSheetState extends State<_ReportSheet> {
     if (!mounted) return;
 
     Navigator.of(context).pop(ok);
-    Get.snackbar(
+    AppSnackbar.show(
       TKeys.reportTitle.tr,
       ok ? TKeys.reportSent.tr : TKeys.reportFailed.tr,
     );

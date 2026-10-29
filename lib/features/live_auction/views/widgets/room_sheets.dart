@@ -12,8 +12,9 @@ import '../tabs/orders_tab.dart';
 import 'camera_selector_sheet.dart';
 import 'report_sheet.dart';
 import '../../../../core/localization/translation_keys.dart';
+import '../../../../core/utils/currency.dart';
 
-String _kr(num? v) => v == null ? '—' : 'kr ${v % 1 == 0 ? v.toInt() : v}';
+String _kr(num? v) => formatNokOrDash(v);
 
 // ── Room overflow actions ────────────────────────────────────────────────────
 
@@ -50,9 +51,10 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
               showDevicesSheet(context, ctrl);
             },
           ),
-          // Lens picker. Only the device that captures can choose a lens — a
-          // watcher is showing another phone's picture, so it has none to pick.
-          if (ctrl.isController)
+          // Lens picker. Only the main device captures, so only it can choose
+          // a lens — a watcher is showing another phone's picture, even when it
+          // holds auction control.
+          if (ctrl.isPrimaryDevice && !ctrl.watching.value)
             _Tile(
               icon: Icons.cameraswitch_rounded,
               label: TKeys.cameraSource.tr,
@@ -144,10 +146,10 @@ Future<void> showRoomActions(BuildContext context, AuctionRoomController ctrl) {
               showExtendDialog(context, ctrl);
             },
           ),
-          // Ending the stream is control-gated (see [endStream]). Offered only
-          // to the device that can actually do it — a watcher would otherwise
-          // confirm a destructive action and then be refused.
-          if (ctrl.isController) ...[
+          // Ending the stream belongs to the main device (see [endStream]).
+          // Offered only to the device that can actually do it — any other
+          // would confirm a destructive action and then be refused.
+          if (ctrl.canEndStream) ...[
             const Divider(height: 8),
             _Tile(
               icon: Icons.stop_circle_outlined,
@@ -1098,6 +1100,17 @@ Future<void> showDevicesSheet(BuildContext context, AuctionRoomController ctrl) 
                                 label:
                                     TKeys.rsWaitingControlApproval.tr,
                               ),
+                      ),
+                    // Handed control by the main device: offer it back. The
+                    // camera never moved, so nothing else changes.
+                    if (ctrl.canReleaseControl)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 4),
+                        child: _WideButton(
+                          label: TKeys.rsGiveControlBack.tr,
+                          icon: Icons.undo_rounded,
+                          onTap: ctrl.releaseAuctionControl,
+                        ),
                       ),
                     if (ctrl.isController)
                       otherControlReqs.isEmpty

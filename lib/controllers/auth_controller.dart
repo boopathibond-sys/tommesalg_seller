@@ -1,15 +1,17 @@
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:get/get.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/env_config.dart';
 import '../core/config/session_scope.dart';
+import '../core/localization/translation_keys.dart';
 import '../core/services/api_client.dart';
 import '../core/services/auth_service.dart';
+import '../core/services/social_auth_service.dart';
 import '../features/notifications/application/push_notification_service.dart';
 
-/// Outcome of the post-login `GET /api/v1/auth/me` account check.
+/// Outcome of the post-login seller `/me` account check.
 enum AuthMeResult {
   /// Account is a seller — proceed into the app.
   seller,
@@ -36,6 +38,12 @@ class AuthController extends GetxController {
   final RxnString _displayName = RxnString();
   String? get displayName => _displayName.value;
 
+  /// The Google / Apple sign-in in flight, if any — that button spins and
+  /// every sign-in control is disabled.
+  final Rxn<SocialProvider> _socialBusy = Rxn<SocialProvider>();
+  SocialProvider? get socialBusy => _socialBusy.value;
+  bool get isBusy => _isLoading.value || _socialBusy.value != null;
+
   // ---------- Services ----------
 
   final _authService = AuthService.instance;
@@ -48,7 +56,7 @@ class AuthController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // Reflect any session the SDK restored on cold start.
+    // Reflect any session restored from secure storage on cold start.
     _syncFromSession();
     // Keep following it: a token refresh that fails, a revoked session, or a
     // sign-out triggered from anywhere else all move [AuthService.status], and
@@ -64,14 +72,14 @@ class AuthController extends GetxController {
 
   void _syncFromSession() {
     _isLoggedIn.value = _authService.isLoggedIn;
-    _displayName.value =
-        _authService.currentUser?.userMetadata?['display_name'] as String?;
+    _displayName.value = _authService.displayName;
   }
 
   // ---------- Intents ----------
 
-  /// Signs in with email + password via the Supabase SDK. The SDK persists the
-  /// session and starts auto-refreshing the token — no manual token handling.
+  /// Signs in with email + password against `POST /api/v1/auth/login`.
+  /// [AuthService] stores the Cognito tokens and provisions the profile when
+  /// the identity is unmapped; the caller still runs the seller gate.
   Future<bool> login({
     required String email,
     required String password,
@@ -79,207 +87,167 @@ class AuthController extends GetxController {
     _isLoading.value = true;
     _errorMessage.value = null;
 
-    log('[auth-login] ➡️  signInWithPassword email=$email');
-
     try {
-      final res = await _authService.signInWithPassword(
-        email: email,
-        password: password,
-      );
-
-      log('[auth-login] ✅ response'
-          'userId=${res.user?.id} '
-          'hasSession=${res.session != null} '
-          'expiresAt=${res.session?.expiresAt}');
-
-      if (res.session != null) {
-        _isLoggedIn.value = true;
-        _displayName.value =
-            res.user?.userMetadata?['display_name'] as String?;
-        log('[auth-login] logged in as ${_displayName.value ?? email}');
-        return true;
-      }
-
-      log('[auth-login] ❌ no session returned');
-      _errorMessage.value = 'Login failed.';
-      return false;
-    } on AuthException catch (e) {
-      // Wrong credentials, unconfirmed email, rate limiting, etc.
-      log('[auth-login] ❌ AuthException status=${e.statusCode} message=${e.message}');
-      _errorMessage.value = e.message;
-      return false;
-    } catch (e) {
-      log('[auth-login] 🔥 error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
-      return false;
-    } finally {
-      _isLoading.value = false;
-    }
-  }
-
-  /// Step 1 of email-code login: asks Supabase to mail a 6-digit code to
-  /// [email]. Returns `true` when the mail was accepted for delivery.
-  ///
-  /// Unlike the password-reset flow this is *not* anti-enumeration — the app
-  /// creates no accounts, so an unknown address comes back as a Supabase
-  /// error, which we translate into a message the seller can act on.
-  Future<bool> sendLoginCode({required String email}) async {
-    if (email.isEmpty) {
-      _errorMessage.value = 'Please enter your email.';
-      return false;
-    }
-
-    _isLoading.value = true;
-    _errorMessage.value = null;
-
-    log('[auth-otp] ➡️  signInWithOtp email=$email');
-
-    try {
-      await _authService.sendEmailOtp(email: email);
-      log('[auth-otp] ✅ code sent');
+      await _authService.login(email: email, password: password);
+      _syncFromSession();
       return true;
-    } on AuthException catch (e) {
-      log('[auth-otp] ❌ AuthException status=${e.statusCode} message=${e.message}');
-      _errorMessage.value = _otpSendError(e);
+    } on AuthApiException catch (e) {
+      log('[auth-login] failed status=${e.statusCode} code=${e.code}');
+      _errorMessage.value = _loginError(e.failure);
       return false;
     } catch (e) {
-      log('[auth-otp] 🔥 error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      log('[auth-login] error: ${e.runtimeType}');
+      _errorMessage.value = TKeys.authSomethingWrong.tr;
       return false;
     } finally {
       _isLoading.value = false;
     }
   }
 
-  /// Step 2 of email-code login: exchanges the typed [code] for a session.
-  /// On success the SDK persists it and auto-refreshes, so the caller can go
-  /// straight on to [fetchMe] for the seller-role gate.
-  Future<bool> verifyLoginCode({
-    required String email,
-    required String code,
-  }) async {
-    if (code.isEmpty) {
-      _errorMessage.value = 'Please enter the code from your email.';
-      return false;
-    }
-
-    _isLoading.value = true;
+  /// "Continue with Google / Apple": browser round-trip, code exchange,
+  /// tokens saved and ensure-profile run. The caller still runs the seller
+  /// gate. On `false`, [errorMessage] is the message to show — or null when
+  /// the user simply backed out, which stays silent.
+  Future<bool> socialLogin(SocialProvider provider) async {
+    if (isBusy) return false;
+    _socialBusy.value = provider;
     _errorMessage.value = null;
 
-    log('[auth-otp] ➡️  verifyOTP email=$email');
-
     try {
-      final res = await _authService.verifyEmailOtp(email: email, token: code);
-
-      log('[auth-otp] ✅ verified userId=${res.user?.id} '
-          'hasSession=${res.session != null}');
-
-      if (res.session != null) {
-        _isLoggedIn.value = true;
-        _displayName.value =
-            res.user?.userMetadata?['display_name'] as String?;
-        return true;
-      }
-
-      _errorMessage.value = 'Login failed. Please request a new code.';
-      return false;
-    } on AuthException catch (e) {
-      // Wrong digits, an expired code, or too many attempts.
-      log('[auth-otp] ❌ AuthException status=${e.statusCode} message=${e.message}');
-      _errorMessage.value = _otpVerifyError(e);
+      final result = await SocialAuthService().signIn(provider);
+      await _authService.signInWithSocial(result);
+      _syncFromSession();
+      return true;
+    } on SocialAuthException catch (e) {
+      if (!e.cancelled) _errorMessage.value = e.message;
       return false;
     } catch (e) {
-      log('[auth-otp] 🔥 error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      log('[auth-social] error: ${e.runtimeType}');
+      _errorMessage.value = TKeys.authSocialFailed.tr;
       return false;
     } finally {
-      _isLoading.value = false;
+      _socialBusy.value = null;
     }
   }
 
-  /// Supabase's send-side messages are developer-facing ("Signups not allowed
-  /// for otp"), so the two cases a seller can actually hit get rewritten.
-  String _otpSendError(AuthException e) {
-    final msg = e.message.toLowerCase();
-    if (msg.contains('signups not allowed') ||
-        msg.contains('not found') ||
-        e.statusCode == '422') {
-      return 'No account found for that email. Email code login is only for '
-          'existing members.';
+  String _loginError(AuthFailure failure) {
+    switch (failure) {
+      case AuthFailure.invalidCredentials:
+      case AuthFailure.validation:
+        return TKeys.authInvalidCredentials.tr;
+      case AuthFailure.restricted:
+        return TKeys.authAccountRestricted.tr;
+      case AuthFailure.rateLimited:
+        return TKeys.authTooManyAttempts.tr;
+      case AuthFailure.unavailable:
+        return TKeys.authTemporarilyUnavailable.tr;
+      case AuthFailure.network:
+        return TKeys.authNetworkError.tr;
     }
-    if (msg.contains('rate limit') ||
-        msg.contains('security purposes') ||
-        e.statusCode == '429') {
-      return 'Too many code requests. Please wait a minute and try again.';
-    }
-    return e.message;
   }
 
-  String _otpVerifyError(AuthException e) {
-    final msg = e.message.toLowerCase();
-    if (msg.contains('expired') || msg.contains('invalid')) {
-      return 'That code is invalid or has expired. Request a new one.';
-    }
-    return e.message;
-  }
-
-  /// Verifies the signed-in account via `GET /api/v1/auth/me`. Called right
-  /// after a successful login to gate entry to the app. The endpoint returns a
-  /// 2xx with `success: true` for any authenticated account, so the seller
-  /// check is on `data.role` — only `role == "seller"` may proceed. A buyer
-  /// (or any other role) yields [AuthMeResult.notSeller] so the caller can
-  /// block entry and explain why.
+  /// Gates entry on `GET /api/v1/seller/auth/me`, the seller-specific profile.
+  ///
+  ///  * 2xx → a seller, unless the payload names some other role.
+  ///  * 403 / `AUTH_ROLE_REQUIRED` → signed in, but not an approved seller.
+  ///  * 404 → the seller route isn't deployed on this backend; fall back to
+  ///    the shared `/api/v1/auth/me` and gate on `role == "seller"`.
+  ///  * anything else → an error to retry, never a logout.
+  ///
+  /// `401 AUTH_EXPIRED` and `AUTH_USER_NOT_FOUND` are recovered inside
+  /// [ApiClient] before this sees the response.
   Future<AuthMeResult> fetchMe() async {
     _isLoading.value = true;
     _errorMessage.value = null;
 
-    final url = '${EnvConfig.baseUrl}/api/v1/auth/me';
-    log('[auth-me] ➡️  GET $url');
-
     try {
-      final response = await ApiClient.instance.get(
-        url,
-        headers: _authService.authHeaders,
-      );
+      var response = await _getMe('/api/v1/seller/auth/me');
+      if (response.statusCode == 404) {
+        log('[auth-me] seller /me missing — falling back to /auth/me');
+        response = await _getMe('/api/v1/auth/me');
+      }
 
-      log('[auth-me] status=${response.statusCode} body=${response.body}');
+      log('[auth-me] status=${response.statusCode}');
 
       if (response.isSuccess) {
-        final body = response.json;
-        if (body['success'] == true && body['data'] is Map) {
-          final role = (body['data'] as Map)['role'] as String?;
+        final body = _decode(response.body);
+        final data = body?['data'];
+        if (body?['success'] == true && data is Map) {
+          await _rememberProfile(data);
+          final role = data['role'] as String?;
           log('[auth-me] role=$role');
-          return role == 'seller'
+          return role == null || role == 'seller'
               ? AuthMeResult.seller
               : AuthMeResult.notSeller;
         }
-        _errorMessage.value = 'Unexpected response. Please try again.';
+        _errorMessage.value = TKeys.gateVerifyFailed.tr;
         return AuthMeResult.error;
       }
 
-      if (response.statusCode == 403) {
-        // Backend rejected the role outright.
+      final code = (_decode(response.body)?['error'] as Map?)?['code'];
+      if (response.statusCode == 403 || code == 'AUTH_ROLE_REQUIRED') {
         return AuthMeResult.notSeller;
       }
 
-      _errorMessage.value = 'Failed to verify account: ${response.statusCode}';
+      _errorMessage.value = TKeys.gateVerifyFailed.tr;
       return AuthMeResult.error;
     } catch (e) {
-      log('[auth-me] 🔥 error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      log('[auth-me] error: ${e.runtimeType}');
+      _errorMessage.value = TKeys.authNetworkError.tr;
       return AuthMeResult.error;
     } finally {
       _isLoading.value = false;
     }
   }
 
-  /// Step 1 of password reset: asks the buyer backend to send the recovery
-  /// email. Returns `true` for "request accepted" — because the backend is
-  /// anti-enumeration, this does NOT confirm the account exists, so the UI
-  /// must show a generic message regardless.
+  /// The gate handles a non-seller itself, so the global
+  /// `AUTH_ROLE_REQUIRED` → sign-out handler must not fire on top of it.
+  Future<ApiResponse> _getMe(String path) => ApiClient.instance.get(
+        '${EnvConfig.baseUrl}$path',
+        headers: _authService.authHeaders,
+        suppressAuthHandlers: true,
+      );
+
+  /// Persists the app user id (for chat / winner comparisons) and a display
+  /// name. The seller payload's exact shape isn't pinned down in the contract
+  /// yet, so this reads the likely spellings.
+  Future<void> _rememberProfile(Map data) async {
+    final user = data['user'] is Map ? data['user'] as Map : const {};
+    String? pick(List<Object?> values) {
+      for (final v in values) {
+        if (v is String && v.isNotEmpty) return v;
+      }
+      return null;
+    }
+
+    await _authService.rememberProfile(
+      userId: pick([data['id'], data['userId'], user['id']]),
+      displayName: pick([
+        data['displayName'],
+        data['businessName'],
+        data['name'],
+        user['displayName'],
+        user['name'],
+      ]),
+    );
+    _syncFromSession();
+  }
+
+  Map<String, dynamic>? _decode(String raw) {
+    try {
+      final body = jsonDecode(raw);
+      return body is Map<String, dynamic> ? body : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Step 1 of password reset: emails a numeric code. Returns `true` for
+  /// "request accepted" — the backend is anti-enumeration, so this does NOT
+  /// confirm the account exists and the UI must stay generic.
   Future<bool> requestPasswordReset({required String email}) async {
     if (email.isEmpty) {
-      _errorMessage.value = 'Email is required.';
+      _errorMessage.value = TKeys.authEnterEmail.tr;
       return false;
     }
 
@@ -287,23 +255,53 @@ class AuthController extends GetxController {
     _errorMessage.value = null;
 
     try {
-      await _authService.sendPasswordResetEmail(email: email);
+      await _authService.requestPasswordReset(email: email);
       return true;
-    } catch (e) {
-      _errorMessage.value = _humanise(e);
+    } on AuthApiException catch (e) {
+      _errorMessage.value = _resetError(e.failure);
       return false;
     } finally {
       _isLoading.value = false;
     }
   }
 
-  /// Strips the leading "Exception: " that `Exception(...)` toString adds, so
-  /// the snackbar shows the bare message.
-  String _humanise(Object e) {
-    final text = e.toString();
-    return text.startsWith('Exception: ')
-        ? text.substring('Exception: '.length)
-        : text;
+  /// Step 2 of password reset: the emailed [code] plus the new password.
+  Future<bool> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    _isLoading.value = true;
+    _errorMessage.value = null;
+
+    try {
+      await _authService.resetPassword(
+        email: email,
+        code: code,
+        newPassword: newPassword,
+      );
+      return true;
+    } on AuthApiException catch (e) {
+      _errorMessage.value = _resetError(e.failure);
+      return false;
+    } finally {
+      _isLoading.value = false;
+    }
+  }
+
+  String _resetError(AuthFailure failure) {
+    switch (failure) {
+      case AuthFailure.validation:
+      case AuthFailure.invalidCredentials:
+        return TKeys.authInvalidResetCode.tr;
+      case AuthFailure.rateLimited:
+        return TKeys.authTooManyAttempts.tr;
+      case AuthFailure.network:
+        return TKeys.authNetworkError.tr;
+      case AuthFailure.restricted:
+      case AuthFailure.unavailable:
+        return TKeys.authTemporarilyUnavailable.tr;
+    }
   }
 
   Future<void> logout() async {

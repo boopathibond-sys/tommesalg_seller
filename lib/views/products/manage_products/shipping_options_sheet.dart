@@ -5,6 +5,7 @@ import '../../../core/localization/translation_keys.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../models/seller_product_detail.dart';
+import '../../../core/utils/currency.dart';
 
 /// What the seller picked in [showShippingOptionsSheet].
 ///
@@ -194,10 +195,7 @@ class _ShippingOptionsSheetState extends State<_ShippingOptionsSheet> {
     );
   }
 
-  static String _nok(num? value) {
-    if (value == null) return '—';
-    return '${value % 1 == 0 ? value.toInt() : value} NOK';
-  }
+  static String _nok(num? value) => formatNokOrDash(value);
 }
 
 /// One radio-style choice row.
@@ -362,158 +360,6 @@ class _SaveButton extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 color: AppColors.white,
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Collects the edit reason the products API requires on every PATCH.
-///
-/// A twin of the sheet the full edit form shows, kept here so a shipping change
-/// made from the detail page is logged in the seller's edit history exactly
-/// like one made from the form — the reason is not something this shorter path
-/// gets to skip.
-///
-/// Returns null when dismissed.
-Future<String?> showEditReasonSheet(BuildContext context) {
-  return showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: Colors.white,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    builder: (_) => const _EditReasonSheet(),
-  );
-}
-
-class _EditReasonSheet extends StatefulWidget {
-  const _EditReasonSheet();
-
-  @override
-  State<_EditReasonSheet> createState() => _EditReasonSheetState();
-}
-
-class _EditReasonSheetState extends State<_EditReasonSheet> {
-  // Owned by the sheet's own state so it is disposed after the pop animation,
-  // not the moment the show future completes.
-  final TextEditingController _reason = TextEditingController();
-
-  @override
-  void dispose() {
-    _reason.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final reason = _reason.text.trim();
-    if (reason.isEmpty) {
-      Get.snackbar(
-        TKeys.reasonRequired.tr,
-        TKeys.describeChange.tr,
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-    Navigator.of(context).pop(reason);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
-      child: SafeArea(
-        top: false,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: media.size.height * 0.85 - media.viewInsets.bottom,
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.borderGrey,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                CustomText(
-                  TKeys.reasonForChange.tr,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-                const SizedBox(height: 6),
-                CustomText(
-                  TKeys.reasonLoggedNote.tr,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
-                  height: 1.4,
-                  color: AppColors.textSecondary,
-                ),
-                const SizedBox(height: 16),
-                CustomText(
-                  TKeys.whyChange.tr,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textSecondary,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _reason,
-                  maxLines: 3,
-                  maxLength: 2000,
-                  autofocus: true,
-                  cursorColor: AppColors.brandNavy,
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: TKeys.whyChangeHint.tr,
-                    counterText: '',
-                    filled: true,
-                    fillColor: const Color(0xFFF5F6F8),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.borderGrey),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.borderGrey),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide:
-                          const BorderSide(color: AppColors.brandNavy, width: 1.4),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _SaveButton(
-                  label: TKeys.saveChanges.tr,
-                  enabled: true,
-                  onTap: _submit,
-                ),
-              ],
             ),
           ),
         ),

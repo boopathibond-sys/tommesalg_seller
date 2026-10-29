@@ -11,6 +11,7 @@ import 'dart:developer';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Base profile URL per platform, keyed by the labels [SocialLinks.activeLinks]
 /// emits ('Website', 'Instagram', …).
@@ -54,18 +55,18 @@ bool isOpenableSocialLink(String platform, String? raw) =>
 Future<void> openSocialLink(String platform, String? raw) async {
   final uri = socialLinkUri(platform, raw);
   if (uri == null) {
-    Get.snackbar(TKeys.slInvalidLink.tr,
+    AppSnackbar.show(TKeys.slInvalidLink.tr,
         TKeys.slInvalidLinkBody.trParams({'platform': platform}));
     return;
   }
   try {
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened) {
-      Get.snackbar(TKeys.slCouldNotOpen.tr,
+      AppSnackbar.show(TKeys.slCouldNotOpen.tr,
           TKeys.slNoAppForUri.trParams({'uri': '$uri'}));
     }
   } catch (e) {
     log('openSocialLink error: $e');
-    Get.snackbar(TKeys.slCouldNotOpen.tr, TKeys.slOpenFailed.tr);
+    AppSnackbar.show(TKeys.slCouldNotOpen.tr, TKeys.slOpenFailed.tr);
   }
 }

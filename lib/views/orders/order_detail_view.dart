@@ -12,6 +12,7 @@ import '../../models/seller_order.dart';
 import '../../models/seller_order_detail.dart';
 import 'order_common.dart';
 import '../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// One order in full — `GET /api/v1/seller/orders/{orderId}`.
 ///
@@ -761,12 +762,12 @@ class _TrackButton extends StatelessWidget {
   Future<void> _open() async {
     final uri = Uri.tryParse(url);
     if (uri == null) {
-      Get.snackbar(TKeys.ordInvalidLink.tr, TKeys.ordInvalidLinkBody.tr);
+      AppSnackbar.show(TKeys.ordInvalidLink.tr, TKeys.ordInvalidLinkBody.tr);
       return;
     }
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened) {
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.ordCouldNotOpen.tr,
         TKeys.ordNoAppForLink.tr,
       );

@@ -18,6 +18,7 @@ import 'widgets/auth_phone_field.dart';
 import 'widgets/auth_text_field.dart';
 import 'widgets/primary_login_button.dart';
 import '../../core/localization/translation_keys.dart';
+import '../../core/services/norway_address_service.dart';
 
 /// The become-a-seller application, and the result state once one exists.
 ///
@@ -28,11 +29,12 @@ import '../../core/localization/translation_keys.dart';
 ///    collects name / date of birth / e-mail itself and the submit goes out
 ///    with no `Authorization` header. There is no status to gate on, so the
 ///    form shows immediately and a local confirmation replaces it on success.
-///  * authenticated — reached through [ApplicantIdentifyView] after an
-///    e-mail-code identify. The status gate and the account fields are both
-///    bearer-only, so this is the only mode that can read them. The applicant
-///    session is signed out on the way out (see [_leave]), so the next launch
-///    lands on a clean login screen rather than auto-routing.
+///  * authenticated — with a signed-in applicant session. The status gate and
+///    the account fields are both bearer-only, so this is the only mode that
+///    can read them. The applicant session is signed out on the way out (see
+///    [_leave]), so the next launch lands on a clean login screen rather than
+///    auto-routing. Nothing opens this mode right now: its entry point, an
+///    e-mail-code sign-in, had no equivalent in the Cognito login API.
 ///
 /// In the authenticated mode which face shows is decided by the server, not by
 /// the card the applicant tapped: [SellerApplicationStatus.isApplyAllowed]
@@ -64,6 +66,14 @@ class _BecomeSellerViewState extends State<BecomeSellerView> {
   final _postalCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
   final _experienceOtherCtrl = TextEditingController();
+
+  /// Street autocomplete (Kartverket). [_addressQueryId] drops stale replies
+  /// that land after a newer keystroke; [_suppressAddressLookup] stops the
+  /// fill-in from a picked suggestion re-triggering a search.
+  Timer? _addressDebounce;
+  int _addressQueryId = 0;
+  bool _suppressAddressLookup = false;
+  List<NorwayAddress> _addressSuggestions = const [];
 
   LiveComfort? _comfort;
   HoursPerWeek? _hours;
@@ -103,11 +113,13 @@ class _BecomeSellerViewState extends State<BecomeSellerView> {
     for (final c in _textFields) {
       c.addListener(_onFieldChanged);
     }
+    _streetCtrl.addListener(_onStreetChanged);
     _load();
   }
 
   @override
   void dispose() {
+    _addressDebounce?.cancel();
     for (final c in _textFields) {
       c.dispose();
     }
@@ -116,6 +128,47 @@ class _BecomeSellerViewState extends State<BecomeSellerView> {
     // being disposed always means the applicant left the flow.
     unawaited(_signOut());
     super.dispose();
+  }
+
+  String _lastStreetText = '';
+
+  void _onStreetChanged() {
+    final text = _streetCtrl.text;
+    // Listeners also fire on selection/cursor moves — only react to edits.
+    if (text == _lastStreetText) return;
+    _lastStreetText = text;
+    _addressDebounce?.cancel();
+    if (_suppressAddressLookup) {
+      _suppressAddressLookup = false;
+      return;
+    }
+    if (text.trim().length < 3) {
+      _addressQueryId++;
+      if (_addressSuggestions.isNotEmpty) {
+        setState(() => _addressSuggestions = const []);
+      }
+      return;
+    }
+    _addressDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final id = ++_addressQueryId;
+      final hits = await NorwayAddressService.search(text);
+      if (!mounted || id != _addressQueryId) return;
+      setState(() => _addressSuggestions = hits);
+    });
+  }
+
+  void _pickAddress(NorwayAddress a) {
+    _addressDebounce?.cancel();
+    _addressQueryId++;
+    _suppressAddressLookup = true;
+    _streetCtrl.value = TextEditingValue(
+      text: a.street,
+      selection: TextSelection.collapsed(offset: a.street.length),
+    );
+    _postalCtrl.text = a.postalCode;
+    _cityCtrl.text = a.city;
+    setState(() => _addressSuggestions = const []);
+    FocusScope.of(context).unfocus();
   }
 
   /// Reads the gate and the account in parallel — neither depends on the other
@@ -627,6 +680,11 @@ class _BecomeSellerViewState extends State<BecomeSellerView> {
             icon: Icons.home_outlined,
             hint: TKeys.bsStreetHint.tr,
           ),
+          if (_addressSuggestions.isNotEmpty)
+            _AddressSuggestions(
+              suggestions: _addressSuggestions,
+              onPick: _pickAddress,
+            ),
           const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1559,6 +1617,84 @@ class _LoadFailed extends StatelessWidget {
               showArrow: false,
               onPressed: onRetry,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dropdown-style list of Kartverket matches under the street field.
+class _AddressSuggestions extends StatelessWidget {
+  const _AddressSuggestions({required this.suggestions, required this.onPick});
+
+  final List<NorwayAddress> suggestions;
+  final ValueChanged<NorwayAddress> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.brandNavy.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.brandNavy.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          children: [
+            for (var i = 0; i < suggestions.length; i++) ...[
+              if (i > 0)
+                Container(
+                  height: 1,
+                  color: AppColors.brandNavy.withOpacity(0.06),
+                ),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => onPick(suggestions[i]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 11),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_on_outlined,
+                            size: 18, color: AppColors.textSecondary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CustomText(
+                                suggestions[i].street,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                              const SizedBox(height: 2),
+                              CustomText(
+                                '${suggestions[i].postalCode} ${suggestions[i].city}',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textMuted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

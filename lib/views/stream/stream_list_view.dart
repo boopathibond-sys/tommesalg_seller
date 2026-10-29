@@ -15,6 +15,7 @@ import '../../models/stream_model.dart';
 import 'create_stream_view.dart';
 import 'stream_analytics_view.dart';
 import '../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 enum _StreamTab { all, draft, scheduled, live, ended, cancelled }
 
@@ -501,7 +502,7 @@ class _StreamCard extends StatelessWidget {
           ),
           if (stream.isLive || stream.isScheduled) ...[
             const SizedBox(height: 12),
-            _EnterRoomButton(stream: stream, ctrl: ctrl),
+            EnterRoomButton(stream: stream, ctrl: ctrl),
           ],
         ],
       ),
@@ -529,16 +530,24 @@ class _StreamCard extends StatelessWidget {
 ///
 /// On the way back the list is refreshed (and the card marked ended right away
 /// when the room says so), so the row never stays stuck on "Live".
-class _EnterRoomButton extends StatefulWidget {
-  const _EnterRoomButton({required this.stream, required this.ctrl});
+class EnterRoomButton extends StatefulWidget {
+  const EnterRoomButton({
+    super.key,
+    required this.stream,
+    required this.ctrl,
+    this.label,
+  });
   final StreamModel stream;
   final StreamListController ctrl;
 
+  /// Button text; defaults to "Enter room".
+  final String? label;
+
   @override
-  State<_EnterRoomButton> createState() => _EnterRoomButtonState();
+  State<EnterRoomButton> createState() => _EnterRoomButtonState();
 }
 
-class _EnterRoomButtonState extends State<_EnterRoomButton> {
+class _EnterRoomButtonState extends State<EnterRoomButton> {
   bool _checking = false;
 
   Future<void> _open() async {
@@ -551,7 +560,7 @@ class _EnterRoomButtonState extends State<_EnterRoomButton> {
       setState(() => _checking = false);
       // resolveStreamStatus already synced the status into the list, so the
       // card has flipped to "Ended" behind this snackbar.
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.streamAlreadyEnded.tr,
         TKeys.streamNoLongerLive.trParams({'title': widget.stream.title}),
       );
@@ -621,7 +630,7 @@ class _EnterRoomButtonState extends State<_EnterRoomButton> {
                   ),
                   const SizedBox(width: 8),
                   CustomText(
-                   TKeys.enterRoom.tr,
+                    widget.label ?? TKeys.enterRoom.tr,
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                     color: AppColors.white,
@@ -732,9 +741,9 @@ class _StreamActionsMenu extends StatelessWidget {
   //
   //   final ok = await ctrl.deleteStream(stream.id);
   //   if (ok) {
-  //     Get.snackbar('Stream deleted', '"${stream.title}" has been deleted.');
+  //     AppSnackbar.show('Stream deleted', '"${stream.title}" has been deleted.');
   //   } else {
-  //     Get.snackbar('Could not delete', ctrl.createError ?? 'Please try again.');
+  //     AppSnackbar.show('Could not delete', ctrl.createError ?? 'Please try again.');
   //   }
   // }
 }

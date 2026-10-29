@@ -8,6 +8,7 @@ import '../data/services/media_push_api.dart';
 import '../data/services/seller_session_service.dart';
 import 'auction_room_controller.dart';
 import '../../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Drives the Media Push screen opened from the auction room's ⋮ menu.
 ///
@@ -328,12 +329,12 @@ class MediaPushController extends GetxController {
   }
 
   void _info(String message) {
-    Get.snackbar(TKeys.mpMediaPush.tr, message,
+    AppSnackbar.show(TKeys.mpMediaPush.tr, message,
         snackPosition: SnackPosition.BOTTOM);
   }
 
   void _error(String message) {
-    Get.snackbar(TKeys.mpMediaPush.tr, message,
+    AppSnackbar.show(TKeys.mpMediaPush.tr, message,
         snackPosition: SnackPosition.BOTTOM);
   }
 }

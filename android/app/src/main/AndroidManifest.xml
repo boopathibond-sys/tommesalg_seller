@@ -55,13 +55,25 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Password-recovery deep link:
-                 tommesalgseller://auth/reset-password#access_token=…&refresh_token=…&type=recovery -->
-            <intent-filter android:autoVerify="false">
+            <!-- Links are handled by app_links (SocialAuthService). Without this,
+                 Flutter's own router also receives every incoming link and tries
+                 to push it as a named route (`/vipps/google?...`), which this
+                 app doesn't have — an exception on every sign-in return. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
+            <!-- Google / Apple sign-in return, caught by app_links in
+                 SocialAuthService. Uses the buyer app's allowlisted return URL
+                 (no.tommesalg.buyer://auth/vipps/google|apple?code=…) because
+                 production doesn't allow a seller scheme yet. Only these two
+                 paths: the buyer app's Vipps return (/vipps) must keep going to
+                 the buyer app. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="tommesalgseller" android:host="auth"/>
+                <data android:scheme="no.tommesalg.buyer" android:host="auth"
+                    android:path="/vipps/google"/>
+                <data android:scheme="no.tommesalg.buyer" android:host="auth"
+                    android:path="/vipps/apple"/>
             </intent-filter>
         </activity>
         <!-- uCrop screen behind image_cropper — required by the plugin so

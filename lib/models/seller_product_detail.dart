@@ -35,6 +35,10 @@ class SellerProductDetail {
   final num? bidIncrement;
   final num? bottomPrice;
 
+  /// Manufacturer's suggested retail price. Shown for reference only — the
+  /// edit endpoint doesn't accept it.
+  final num? msrp;
+
   final int? stockCount;
   final String status;
   final bool isVisible;
@@ -50,6 +54,8 @@ class SellerProductDetail {
   final String? taxonomyNodeId;
   final String? sizeType;
   final String? size;
+  final String? usSize;
+  final String? euSize;
   final String? vendorStyle;
   final String? importTag;
 
@@ -91,6 +97,7 @@ class SellerProductDetail {
     this.startingPrice,
     this.bidIncrement,
     this.bottomPrice,
+    this.msrp,
     this.stockCount,
     this.status = '',
     this.isVisible = false,
@@ -105,6 +112,8 @@ class SellerProductDetail {
     this.taxonomyNodeId,
     this.sizeType,
     this.size,
+    this.usSize,
+    this.euSize,
     this.vendorStyle,
     this.importTag,
     this.assignedSellerCount,
@@ -119,7 +128,14 @@ class SellerProductDetail {
   /// Parses the whole `data` block (`{ product, platformShippingSettings }`).
   /// Older builds of the endpoint returned the product at the root, so a
   /// payload without a `product` key is read as the product itself.
-  factory SellerProductDetail.fromData(Map<String, dynamic> data) {
+  ///
+  /// [shippingAmountsNok], when given, replaces the block's
+  /// `allowedShippingAmountsNok` — the list from
+  /// `GET /seller/shipping-options` is the one the API validates against.
+  factory SellerProductDetail.fromData(
+    Map<String, dynamic> data, {
+    List<num>? shippingAmountsNok,
+  }) {
     final product =
         (data['product'] as Map?)?.cast<String, dynamic>() ?? data;
     final shipping = (data['platformShippingSettings'] as Map?)
@@ -129,7 +145,10 @@ class SellerProductDetail {
       product,
       platformShipping: shipping == null
           ? null
-          : PlatformShippingSettings.fromJson(shipping),
+          : PlatformShippingSettings.fromJson(
+              shipping,
+              amountsNok: shippingAmountsNok,
+            ),
     );
   }
 
@@ -153,12 +172,13 @@ class SellerProductDetail {
       brand: _str(json['brand']),
       gender: _str(json['gender']),
       tags: _stringList(json['tags']),
-      originalPrice: _num(json['originalPrice']),
+      originalPrice: _num(json['veilPris'] ?? json['originalPrice']),
       buyNowPrice: _num(json['buyNowPrice']),
       regularPrice: _num(json['regularPrice']),
       startingPrice: _num(json['startingPrice']),
       bidIncrement: _num(json['bidIncrement']),
       bottomPrice: _num(json['bottomPrice']),
+      msrp: _num(json['msrp']),
       stockCount: _num(json['stockCount'])?.toInt(),
       status: _str(json['status']) ?? '',
       isVisible: json['isVisible'] as bool? ?? false,
@@ -173,6 +193,8 @@ class SellerProductDetail {
       taxonomyNodeId: _str(json['taxonomyNodeId']),
       sizeType: _str(json['sizeType']),
       size: _str(json['size']),
+      usSize: _str(json['usSize']),
+      euSize: _str(json['euSize']),
       vendorStyle: _str(json['vendorStyle']),
       importTag: _str(json['importTag']),
       assignedSellerCount: _num(json['assignedSellerCount'])?.toInt(),
@@ -277,7 +299,10 @@ class PlatformShippingSettings {
     this.allowedShippingAmountsNok = const [],
   });
 
-  factory PlatformShippingSettings.fromJson(Map<String, dynamic> json) {
+  factory PlatformShippingSettings.fromJson(
+    Map<String, dynamic> json, {
+    List<num>? amountsNok,
+  }) {
     return PlatformShippingSettings(
       defaultShippingPriceNok:
           SellerProductDetail._num(json['defaultShippingPriceNok']),
@@ -286,7 +311,8 @@ class PlatformShippingSettings {
       maxShippingPerProductNok:
           SellerProductDetail._num(json['maxShippingPerProductNok']),
       allowSellerOverride: json['allowSellerOverride'] as bool? ?? false,
-      allowedShippingAmountsNok: (json['allowedShippingAmountsNok'] as List?)
+      allowedShippingAmountsNok: amountsNok ??
+          (json['allowedShippingAmountsNok'] as List?)
               ?.map(SellerProductDetail._num)
               .whereType<num>()
               .toList() ??

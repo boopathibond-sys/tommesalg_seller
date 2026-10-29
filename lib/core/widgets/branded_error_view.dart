@@ -26,7 +26,7 @@ class BrandedErrorView extends StatelessWidget {
   });
 
   /// Human-readable message — the controllers already produce this via
-  /// `_readableError` (Supabase / buyer API) so callers can pass the
+  /// `_readableError` (buyer API) so callers can pass the
   /// value straight through.
   final String message;
 

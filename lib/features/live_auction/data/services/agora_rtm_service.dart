@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as dev;
 
@@ -21,6 +22,14 @@ class AgoraRtmService {
   String? _channelName;
   bool _loggedIn = false;
 
+  /// Everyone else subscribed to the chat channel, from RTM presence. Buyers
+  /// subscribe to the same `auction:{streamId}` channel with presence on, so
+  /// this is the live audience — the backend's `viewerCount` has been
+  /// reporting 0 for streams with buyers watching.
+  final Set<String> _present = {};
+  String? _selfId;
+  void Function(int count)? _onViewerCount;
+
   static const String _tag = 'AgoraRtmService';
 
   bool get isLoggedIn => _loggedIn;
@@ -34,8 +43,11 @@ class AgoraRtmService {
     required void Function() onModerationClear,
     required Future<void> Function() onTokenWillExpire,
     void Function(String message)? onError,
+    void Function(int count)? onViewerCount,
   }) async {
     if (_loggedIn) return;
+    _selfId = userId;
+    _onViewerCount = onViewerCount;
 
     final (createStatus, client) = await RTM(appId, userId);
     if (createStatus.error) {
@@ -56,7 +68,13 @@ class AgoraRtmService {
       },
       linkState: (LinkStateEvent event) {
         dev.log('rtm link state: ${event.currentState}', name: _tag);
+        // Joins / leaves while the link was down were missed — re-read the
+        // occupants once it's back.
+        if (event.currentState == RtmLinkState.connected) {
+          unawaited(refreshPresence());
+        }
       },
+      presence: _handlePresence,
     );
 
     final (loginStatus, _) = await client.login(token);
@@ -82,7 +100,75 @@ class AgoraRtmService {
       throw StateError('RTM subscribe failed: ${status.reason}');
     }
     dev.log('rtm subscribed to $channelName', name: _tag);
+    unawaited(refreshPresence());
   }
+
+  /// Re-reads who's in the channel (`whoNow`) and reports the audience.
+  /// Presence events keep it current after this; this is the seed and the
+  /// resync after a reconnect.
+  Future<void> refreshPresence() async {
+    final client = _client;
+    final channel = _channelName;
+    if (client == null || channel == null) return;
+    try {
+      final (status, result) = await client
+          .getPresence()
+          .whoNow(channel, RtmChannelType.message, includeUserId: true);
+      if (status.error || result == null) {
+        dev.log('rtm whoNow failed: ${status.reason}', name: _tag);
+        return;
+      }
+      _present
+        ..clear()
+        ..addAll(_ids(result.userStateList));
+      _present.remove(_selfId);
+      // A long list comes paged; the first page's ids are then only part of
+      // it, while `count` is the whole channel (self included).
+      final total = result.nextPage.isEmpty
+          ? _present.length
+          : (result.count - (_selfId == null ? 0 : 1));
+      _onViewerCount?.call(total < 0 ? 0 : total);
+    } catch (e) {
+      dev.log('rtm whoNow error: $e', name: _tag);
+    }
+  }
+
+  void _handlePresence(PresenceEvent event) {
+    if (event.channelName != null && event.channelName != _channelName) return;
+    switch (event.type) {
+      case RtmPresenceEventType.snapshot:
+        _present
+          ..clear()
+          ..addAll(_ids(event.snapshot?.userStateList));
+        break;
+      case RtmPresenceEventType.remoteJoinChannel:
+        final id = event.publisher;
+        if (id != null) _present.add(id);
+        break;
+      case RtmPresenceEventType.remoteLeaveChannel:
+      case RtmPresenceEventType.remoteTimeout:
+        _present.remove(event.publisher);
+        break;
+      case RtmPresenceEventType.interval:
+        // Past the channel's announce limit RTM batches joins / leaves into
+        // periodic interval events instead of one event each.
+        final info = event.interval;
+        _present
+          ..addAll(info?.joinUserList?.users ?? const [])
+          ..removeAll(info?.leaveUserList?.users ?? const [])
+          ..removeAll(info?.timeoutUserList?.users ?? const []);
+        break;
+      default:
+        return;
+    }
+    _present.remove(_selfId);
+    _onViewerCount?.call(_present.length);
+  }
+
+  static Iterable<String> _ids(List<UserState>? states) => (states ?? const [])
+      .map((s) => s.userId)
+      .whereType<String>()
+      .where((id) => id.isNotEmpty);
 
   /// Publishes a chat message as `{ type: "CHAT", id, text, ts }`.
   Future<void> sendMessage({
@@ -142,6 +228,7 @@ class AgoraRtmService {
       _client = null;
       _channelName = null;
       _loggedIn = false;
+      _present.clear();
     }
   }
 

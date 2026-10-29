@@ -14,8 +14,13 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<!-- Password-recovery deep link:
-	     tommesalgseller://auth/reset-password#access_token=…&refresh_token=…&type=recovery -->
+	<!-- Reserved for the Google / Apple sign-in callback
+	     (tommesalgseller://auth/…?code=…). Nothing handles it yet: the backend
+	     must first add this scheme to MOBILE_AUTH_DEEP_LINK_PREFIXES. -->
+	<!-- Incoming links are handled by app_links / the sign-in session, not
+	     Flutter's router (the app has no named routes for them). -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -54,7 +59,7 @@
 		the encryption question by hand — silently costing a day per submission.
 
 		`false` is correct as long as the app only uses encryption that is
-		exempt under category 5 part 2: HTTPS/TLS to our own API, Supabase and
+		exempt under category 5 part 2: HTTPS/TLS to our own API and
 		Agora, plus Apple's own Keychain/crypto. Adding proprietary or
 		non-standard cryptography later means flipping this to `true` and filing
 		the CCATS/self-classification paperwork.
@@ -62,7 +67,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Seller Squad trenger tilgang til kameraet slik at du kan skanne strekkoder og sende live-video i auksjonsrommet.</string>
+	<string>Seller Squad trenger tilgang til kameraet slik at du kan skanne strekkoder, fotografere produkter og mål, og sende live-video i auksjonsrommet.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Seller Squad trenger tilgang til mikrofonen slik at kjøperne kan høre deg under en live-auksjon.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

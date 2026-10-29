@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
 import '../../core/localization/translation_keys.dart';
 import 'package:get/get.dart';
+import '../../core/utils/currency.dart';
 
 // Status pills, borders and formatting shared by the orders list and the order
 // details screen.
@@ -67,20 +68,8 @@ Color paymentStatusColor(String status) {
   }
 }
 
-/// `1045` → `1,045.00 NOK`; null → `—`.
-String formatAmount(num? value) {
-  if (value == null) return '—';
-  final fixed = value.toStringAsFixed(2);
-  final parts = fixed.split('.');
-  final digits = parts.first.replaceFirst('-', '');
-  final grouped = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) grouped.write(',');
-    grouped.write(digits[i]);
-  }
-  final sign = value < 0 ? '-' : '';
-  return '$sign$grouped.${parts.last} NOK';
-}
+/// `1045` → `1 045,00 kr`; null → `—`.
+String formatAmount(num? value) => formatNokOrDash(value);
 
 List<String> get _months => [
       '', TKeys.monthJanShort.tr, TKeys.monthFebShort.tr, TKeys.monthMarShort.tr,

@@ -12,6 +12,7 @@ import '../../core/widgets/custom_text.dart';
 import '../../core/widgets/image_pick_crop.dart';
 import '../../models/stream_model.dart';
 import '../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Full-page form to create — or edit — a stream. Mirrors the seller web
 /// "New stream" screen: title, note, 9:16 thumbnail, sizes, and a
@@ -156,7 +157,7 @@ class _CreateStreamViewState extends State<CreateStreamView> {
         _thumbnailLocalPath = null;
         _thumbnailS3Key = null;
       });
-      Get.snackbar(TKeys.csUploadFailed.tr, _ctrl.createError ?? TKeys.csThumbUploadFailed.tr);
+      AppSnackbar.show(TKeys.csUploadFailed.tr, _ctrl.createError ?? TKeys.csThumbUploadFailed.tr);
     }
   }
 
@@ -228,7 +229,7 @@ class _CreateStreamViewState extends State<CreateStreamView> {
     final error = _validate();
     if (error != null) {
       setState(() => _errorText = error);
-      Get.snackbar(TKeys.csMissingInformation.tr, error);
+      AppSnackbar.show(TKeys.csMissingInformation.tr, error);
       return;
     }
     setState(() {
@@ -269,7 +270,7 @@ class _CreateStreamViewState extends State<CreateStreamView> {
 
     if (ok) {
       Navigator.of(context).pop(true);
-      Get.snackbar(
+      AppSnackbar.show(
         _isEdit ? TKeys.csStreamUpdated.tr : TKeys.csStreamCreated.tr,
         _isEdit
             ? TKeys.csChangesSaved.tr
@@ -281,7 +282,7 @@ class _CreateStreamViewState extends State<CreateStreamView> {
       // screen, not just in a snackbar that fades.
       final message = _ctrl.createError ?? TKeys.pleaseTryAgain.tr;
       setState(() => _errorText = message);
-      Get.snackbar(
+      AppSnackbar.show(
         _isEdit ? TKeys.csCouldNotUpdate.tr : TKeys.csCouldNotCreate.tr,
         message,
         duration: const Duration(seconds: 5),

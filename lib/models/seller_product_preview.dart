@@ -94,7 +94,7 @@ class SellerProductPreview {
       size: json['size'] as String?,
       usSize: json['usSize'] as String?,
       euSize: json['euSize'] as String?,
-      originalPrice: _num(json['originalPrice']),
+      originalPrice: _num(json['veilPris'] ?? json['originalPrice']),
       regularPrice: _num(json['regularPrice']),
       startingPrice: _num(json['startingPrice']),
       bottomPrice: _num(json['bottomPrice']),

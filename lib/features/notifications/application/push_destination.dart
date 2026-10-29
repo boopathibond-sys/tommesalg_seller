@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:developer';
 
+/// The seller-app screen a [PushDestination] resolves to.
+enum PushTarget { auctionRoom, streamAnalytics, streamList, order, sku, none }
+
 /// Where a tapped push (or a tapped inbox row) should take the seller.
 ///
 /// The backend spreads the same few ids across several keys of the FCM data
@@ -51,32 +54,73 @@ class PushDestination {
   /// payloads never carry.
   final String? locationId;
 
-  /// True when this tap should drop the seller into their live auction room.
+  static const _orderDestinations = {
+    'ORDER', 'ORDERS', 'ORDER_DETAIL', 'PAYMENT', 'PAYMENT_ACTION',
+    'SHIPPING', 'SHIPMENT',
+  };
+  static const _roomDestinations = {
+    'AUCTION_ROOM', 'STREAM', 'STREAM_DETAIL', 'LIVE_ROOM',
+  };
+  static const _skuDestinations = {'SKU', 'LOCATION', 'INVENTORY'};
+
+  /// The one screen this tap should open. Checked in priority order:
   ///
-  /// `destinationType` is authoritative, but a payload that carries a stream id
-  /// with no destination (older templates) is treated as a room link too —
-  /// there is nothing else a bare `streamId` could mean for a seller.
-  bool get opensAuctionRoom =>
-      (streamId?.isNotEmpty ?? false) &&
-      (destinationType.isEmpty ||
-          destinationType == 'AUCTION_ROOM' ||
-          destinationType == 'STREAM' ||
-          destinationType == 'STREAM_DETAIL' ||
-          destinationType == 'LIVE_ROOM');
+  ///  1. An order — when the payload says so (`destinationType`) or the
+  ///     template is an order/payment/shipping one. Checked before the stream
+  ///     because orders won in a live auction carry that stream's id as well.
+  ///  2. A stream — the live room, unless the template says the stream is
+  ///     over (→ its analytics) or never went ahead (→ the Streams tab, which
+  ///     shows the rejection). A room for a closed stream is a dead screen.
+  ///  3. A warehouse SKU.
+  ///  4. A bare order id from an older template with no destination at all.
+  ///
+  /// [PushTarget.none] means nothing in the seller app can be opened from this
+  /// payload; the caller tells the seller rather than navigating somewhere
+  /// arbitrary.
+  PushTarget get target {
+    final dest = destinationType;
+    final hasOrder = orderId?.isNotEmpty ?? false;
 
-  /// True when this tap should open one warehouse SKU.
-  bool get opensSku =>
-      !opensAuctionRoom &&
-      (locationId?.isNotEmpty ?? false) &&
-      (destinationType.isEmpty ||
-          destinationType == 'SKU' ||
-          destinationType == 'LOCATION' ||
-          destinationType == 'INVENTORY' ||
-          destinationType.startsWith('STOCK'));
+    if (hasOrder &&
+        (_orderDestinations.contains(dest) || (dest.isEmpty && _isOrderType))) {
+      return PushTarget.order;
+    }
 
-  /// Nothing in the seller app can be opened from this payload. The caller
-  /// tells the seller rather than navigating somewhere arbitrary.
-  bool get isDeadEnd => !opensAuctionRoom && !opensSku;
+    if (streamId?.isNotEmpty ?? false) {
+      if (dest == 'STREAM_ANALYTICS' || dest == 'STREAM_SUMMARY' ||
+          _isStreamType(const ['_ENDED', '_COMPLETED', '_SUMMARY'])) {
+        return PushTarget.streamAnalytics;
+      }
+      if (dest == 'STREAMS' || dest == 'STREAM_LIST' ||
+          _isStreamType(const ['_REJECTED', '_CANCELLED', '_CANCELED'])) {
+        return PushTarget.streamList;
+      }
+      if (dest.isEmpty || _roomDestinations.contains(dest)) {
+        return PushTarget.auctionRoom;
+      }
+    }
+
+    if ((locationId?.isNotEmpty ?? false) &&
+        (dest.isEmpty ||
+            _skuDestinations.contains(dest) ||
+            dest.startsWith('STOCK'))) {
+      return PushTarget.sku;
+    }
+
+    if (hasOrder && dest.isEmpty) return PushTarget.order;
+    return PushTarget.none;
+  }
+
+  bool get _isOrderType =>
+      type.startsWith('ORDER_') ||
+      type.startsWith('PAYMENT_') ||
+      type.startsWith('SHIPPING_') ||
+      type.startsWith('SHIPMENT_');
+
+  /// `STREAM_ENDED`, `STREAM_REJECTED`, … — stream-level templates only, so a
+  /// per-lot `AUCTION_ENDED` still opens the (still running) room.
+  bool _isStreamType(List<String> suffixes) =>
+      type.startsWith('STREAM_') && suffixes.any(type.endsWith);
 
   static PushDestination? parse(Map<String, dynamic> data) {
     if (data.isEmpty) return null;
@@ -202,7 +246,8 @@ class PushDestination {
 
   @override
   String toString() =>
-      'PushDestination(type: $type, destination: $destinationType, '
+      'PushDestination(target: ${target.name}, type: $type, '
+      'destination: $destinationType, '
       'streamId: $streamId, sellerId: $sellerId, orderId: $orderId, '
       'productId: $productId, offerId: $offerId, locationId: $locationId)';
 }

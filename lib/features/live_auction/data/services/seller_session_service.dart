@@ -148,7 +148,7 @@ class SellerSessionService {
       '${_base(streamId)}/devices',
       headers: await AuthService.instance.ensuredAuthHeaders(),
     );
-    return SessionDevicesSnapshot.fromJson(_data(res));
+    return _snapshotOf(_data(res));
   }
 
   /// `GET /session/status?deviceId=…` — this device's PRIMARY flag plus the same
@@ -207,7 +207,7 @@ class SellerSessionService {
       headers: await AuthService.instance.ensuredAuthHeaders(),
       body: {...session.authBody, 'requestId': requestId},
     );
-    return SessionDevicesSnapshot.fromJson(_data(res));
+    return _snapshotOf(_data(res));
   }
 
   /// `POST /session/primary/reject` — the PRIMARY denies the handoff.
@@ -221,13 +221,12 @@ class SellerSessionService {
       headers: await AuthService.instance.ensuredAuthHeaders(),
       body: {...session.authBody, 'requestId': requestId},
     );
-    return SessionDevicesSnapshot.fromJson(_data(res));
+    return _snapshotOf(_data(res));
   }
 
   // ── Auction-control handoff ───────────────────────────────────────────────
   //
   // Independent of PRIMARY: a SECONDARY device may hold auction control.
-  // `/auction-control/release` is reserved (501) and deliberately unused.
 
   /// `POST /session/auction-control/request` — ask the current controller for
   /// auction command authority.
@@ -252,7 +251,22 @@ class SellerSessionService {
       headers: await AuthService.instance.ensuredAuthHeaders(),
       body: {...session.authBody, 'requestId': requestId},
     );
-    return SessionDevicesSnapshot.fromJson(_data(res));
+    return _snapshotOf(_data(res));
+  }
+
+  /// `POST /session/auction-control/release` — the current controller hands
+  /// auction control back; the server clears it to null (= the PRIMARY device
+  /// holds it). Idempotent; 403 when this device isn't the controller.
+  Future<SessionDevicesSnapshot> releaseControl(
+    String streamId,
+    SellerSession session,
+  ) async {
+    final res = await _api.post(
+      '${_base(streamId)}/auction-control/release',
+      headers: await AuthService.instance.ensuredAuthHeaders(),
+      body: session.authBody,
+    );
+    return _snapshotOf(_data(res));
   }
 
   /// `POST /session/auction-control/reject` — the controller denies a request.
@@ -266,7 +280,7 @@ class SellerSessionService {
       headers: await AuthService.instance.ensuredAuthHeaders(),
       body: {...session.authBody, 'requestId': requestId},
     );
-    return SessionDevicesSnapshot.fromJson(_data(res));
+    return _snapshotOf(_data(res));
   }
 
   // ── Session cache ─────────────────────────────────────────────────────────
@@ -310,6 +324,15 @@ class SellerSessionService {
     } catch (e) {
       log('Session cache clear error: $e');
     }
+  }
+
+  /// The device snapshot in an approve / reject / release answer — nested
+  /// under `snapshot` or, on older deployments, the `data` object itself.
+  SessionDevicesSnapshot _snapshotOf(Map<String, dynamic> data) {
+    final snap = data['snapshot'];
+    return SessionDevicesSnapshot.fromJson(
+      snap is Map<String, dynamic> ? snap : data,
+    );
   }
 
   /// Unwraps the V1 `{ success, data }` envelope, throwing a typed error on the

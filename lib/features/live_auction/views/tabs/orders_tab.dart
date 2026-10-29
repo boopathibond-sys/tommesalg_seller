@@ -8,6 +8,7 @@ import '../../../../views/orders/order_detail_view.dart';
 import '../../controllers/auction_room_controller.dart';
 import '../../data/models/stream_order.dart';
 import '../../../../core/localization/translation_keys.dart';
+import '../../../../core/utils/currency.dart';
 
 /// Opens the stream's orders as its own screen from the room's ⋮ menu.
 ///
@@ -337,4 +338,4 @@ class _EmptyOrders extends StatelessWidget {
   }
 }
 
-String _kr(num? v) => v == null ? '—' : 'kr ${v % 1 == 0 ? v.toInt() : v}';
+String _kr(num? v) => formatNokOrDash(v);

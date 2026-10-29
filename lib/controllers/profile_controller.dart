@@ -76,7 +76,7 @@ class ProfileController extends GetxController {
   /// Loads the seller profile.
   ///
   /// Right after login the backend can briefly reject the freshly-minted
-  /// Supabase token (validation lag / cold connection), which previously
+  /// access token (validation lag / cold connection), which previously
   /// surfaced the error card on the first launch of the Home screen. To
   /// avoid that, the request is retried a few times with a shot backoff
   /// before any error is shown to the user.

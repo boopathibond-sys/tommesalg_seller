@@ -9,9 +9,23 @@ class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
-  /// Invoked when the API responds with 401 + `error.code == "AUTH_EXPIRED"`.
-  /// Wire this up once at app start to clear the session and bounce to login.
-  void Function()? onSessionExpired;
+  // ── Session recovery hooks (wired to AuthService in `main()`) ──
+  //
+  // They apply only to requests that carry a `Bearer` header and aren't auth
+  // routes themselves, so a refresh or ensure-profile call can never recurse.
+
+  /// Returns a bearer that is valid for at least another minute (refreshing
+  /// first when needed). Consulted before every bearer request, so a call never
+  /// leaves with a token that is about to expire.
+  Future<String?> Function()? freshAccessToken;
+
+  /// Forces one refresh after `401 AUTH_EXPIRED` and returns the new token for
+  /// a single retry, or null when none could be minted.
+  Future<String?> Function()? refreshAccessToken;
+
+  /// Provisions the app profile after `401 AUTH_USER_NOT_FOUND`. Returns
+  /// whether it now exists, in which case the request is retried once.
+  Future<bool> Function()? ensureProfile;
 
   /// Invoked when any API responds with `error.code == "AUTH_ROLE_REQUIRED"`
   /// (the signed-in account is not a seller). Wire this up once at app start to
@@ -83,6 +97,22 @@ class ApiClient {
     Map<String, String>? fields,
     bool suppressAuthHandlers = false,
   }) async {
+    return _withRecovery(
+      url,
+      headers,
+      (h) => _sendMultipart(url,
+          fieldName: fieldName, filePath: filePath, headers: h, fields: fields),
+      suppressAuthHandlers: suppressAuthHandlers,
+    );
+  }
+
+  Future<ApiResponse> _sendMultipart(
+    String url, {
+    required String fieldName,
+    required String filePath,
+    Map<String, String>? headers,
+    Map<String, String>? fields,
+  }) async {
     final uri = Uri.parse(url);
     final stopwatch = Stopwatch()..start();
 
@@ -116,15 +146,6 @@ class ApiClient {
         responseBody,
         stopwatch.elapsedMilliseconds,
       );
-
-      if (!suppressAuthHandlers) {
-        if (streamed.statusCode == 401 && _isAuthExpired(responseBody)) {
-          onSessionExpired?.call();
-        }
-        if (_isRoleRequired(responseBody)) {
-          onRoleRequired?.call();
-        }
-      }
 
       return ApiResponse(
         statusCode: streamed.statusCode,
@@ -172,6 +193,98 @@ class ApiClient {
     Map<String, String>? headers,
     Object? body,
     bool suppressAuthHandlers = false,
+  }) {
+    return _withRecovery(
+      url,
+      headers,
+      (h) => _send(method, url, headers: h, body: body),
+      suppressAuthHandlers: suppressAuthHandlers,
+    );
+  }
+
+  /// Runs [send] with a fresh bearer, then recovers once from the two 401s
+  /// that aren't the seller's fault (contract §7.1, §8.2):
+  ///
+  ///  * `AUTH_EXPIRED` → refresh, retry once with the new token;
+  ///  * `AUTH_USER_NOT_FOUND` → ensure-profile, retry once. Not a token
+  ///    problem, so no refresh and no logout.
+  ///
+  /// [suppressAuthHandlers] only silences [onRoleRequired]; recovery still
+  /// runs, because a refreshed token is never the wrong answer.
+  Future<ApiResponse> _withRecovery(
+    String url,
+    Map<String, String>? headers,
+    Future<ApiResponse> Function(Map<String, String>? headers) send, {
+    required bool suppressAuthHandlers,
+  }) async {
+    final recover = _bearerKey(headers) != null && !_isAuthRoute(url);
+
+    var sent = recover
+        ? _withBearer(headers!, await freshAccessToken?.call())
+        : headers;
+    var response = await send(sent);
+
+    if (recover && response.statusCode == 401) {
+      switch (_errorCode(response.body)) {
+        case 'AUTH_EXPIRED':
+          final token = await refreshAccessToken?.call();
+          if (token != null) {
+            sent = _withBearer(headers!, token);
+            response = await send(sent);
+          }
+          break;
+        case 'AUTH_USER_NOT_FOUND':
+          if (await ensureProfile?.call() ?? false) {
+            response = await send(sent);
+          }
+          break;
+      }
+    }
+
+    if (!suppressAuthHandlers &&
+        _errorCode(response.body) == 'AUTH_ROLE_REQUIRED') {
+      onRoleRequired?.call();
+    }
+    return response;
+  }
+
+  /// The header key holding `Authorization: Bearer …`, whatever its casing.
+  String? _bearerKey(Map<String, String>? headers) {
+    if (headers == null) return null;
+    for (final e in headers.entries) {
+      if (e.key.toLowerCase() == 'authorization' &&
+          e.value.startsWith('Bearer ')) {
+        return e.key;
+      }
+    }
+    return null;
+  }
+
+  Map<String, String> _withBearer(Map<String, String> headers, String? token) {
+    if (token == null) return headers;
+    return {...headers, _bearerKey(headers)!: 'Bearer $token'};
+  }
+
+  /// Auth endpoints manage the session themselves; recovering inside them
+  /// would recurse (a refresh that refreshes, an ensure-profile that ensures).
+  bool _isAuthRoute(String url) {
+    final path = Uri.tryParse(url)?.path ?? url;
+    return _authRoutes.contains(path) || path.startsWith('/api/v1/buyer/auth/');
+  }
+
+  static const Set<String> _authRoutes = {
+    '/api/v1/auth/login',
+    '/api/v1/auth/refresh',
+    '/api/v1/auth/logout',
+    '/api/v1/auth/ensure-profile',
+    '/api/v1/auth/reset-password',
+  };
+
+  Future<ApiResponse> _send(
+    String method,
+    String url, {
+    Map<String, String>? headers,
+    Object? body,
   }) async {
     final uri = Uri.parse(url);
     final encodedBody = body != null ? jsonEncode(body) : null;
@@ -216,15 +329,6 @@ class ApiClient {
 
       _logResponse(method, url, response.statusCode, responseBody, stopwatch.elapsedMilliseconds);
 
-      if (!suppressAuthHandlers) {
-        if (response.statusCode == 401 && _isAuthExpired(responseBody)) {
-          onSessionExpired?.call();
-        }
-        if (_isRoleRequired(responseBody)) {
-          onRoleRequired?.call();
-        }
-      }
-
       return ApiResponse(
         statusCode: response.statusCode,
         body: responseBody,
@@ -247,7 +351,8 @@ class ApiClient {
     if (headers != null && headers.isNotEmpty) {
       debugPrint('│ Headers:');
       headers.forEach((k, v) {
-        debugPrint('│   $k: $v');
+        final shown = k.toLowerCase() == 'authorization' ? 'Bearer ***' : v;
+        debugPrint('│   $k: $shown');
       });
     }
     if (body != null) {
@@ -280,29 +385,48 @@ class ApiClient {
     debugPrint('└──────────────────────────────────────────');
   }
 
-  bool _isAuthExpired(String body) {
+  /// `error.code` of a V1 error envelope, or null.
+  String? _errorCode(String body) {
     try {
       final decoded = jsonDecode(body);
       if (decoded is Map && decoded['error'] is Map) {
-        return (decoded['error'] as Map)['code'] == 'AUTH_EXPIRED';
+        return (decoded['error'] as Map)['code'] as String?;
       }
     } catch (_) {}
-    return false;
+    return null;
   }
 
-  bool _isRoleRequired(String body) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is Map && decoded['error'] is Map) {
-        return (decoded['error'] as Map)['code'] == 'AUTH_ROLE_REQUIRED';
-      }
-    } catch (_) {}
-    return false;
+  /// Body fields that must never reach a log, even a debug one: credentials,
+  /// tokens and one-time codes (contract §14).
+  static const Set<String> _secretKeys = {
+    'password',
+    'newPassword',
+    'accessToken',
+    'refreshToken',
+    'idToken',
+    'access_token',
+    'refresh_token',
+    'id_token',
+    'code',
+    'otp',
+  };
+
+  Object? _redact(Object? value) {
+    if (value is Map) {
+      return {
+        for (final e in value.entries)
+          e.key: _secretKeys.contains(e.key) && e.value is String
+              ? '***'
+              : _redact(e.value),
+      };
+    }
+    if (value is List) return value.map(_redact).toList();
+    return value;
   }
 
   void _printPrettyJson(String raw, String prefix) {
     try {
-      final decoded = jsonDecode(raw);
+      final decoded = _redact(jsonDecode(raw));
       final pretty = const JsonEncoder.withIndent('  ').convert(decoded);
       for (final line in pretty.split('\n')) {
         debugPrint('$prefix$line');

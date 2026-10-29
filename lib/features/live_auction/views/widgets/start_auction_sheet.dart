@@ -6,6 +6,8 @@ import '../../data/models/auction_room_snapshot.dart';
 import '../../data/services/auction_room_api.dart';
 import '../../../../core/localization/translation_keys.dart';
 import 'package:get/get.dart';
+import '../../../../core/utils/currency.dart';
+import '../../../../core/services/shipping_options_service.dart';
 
 /// Bottom sheet to configure and start an auction for the queue head.
 /// Returns [StartAuctionParams] on confirm, or null on cancel.
@@ -23,14 +25,18 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
   final _startingPrice = TextEditingController();
   final _bidIncrement = TextEditingController();
 
-  /// Fixed shipping tiers offered by the platform, in NOK.
-  static const _shippingTiers = <num>[79, 99, 129, 169, 249];
-  static const _defaultShipping = 99;
+  /// The lot's own shipping price, when it has one (> 0).
+  num? _lotShipping;
 
-  /// The tiers plus, if the lot already carries an off-tier price, that price —
-  /// so opening the sheet never silently rewrites what the seller configured.
-  late final List<num> _shippingOptions;
+  /// The platform's allowed amounts plus, if the lot already carries an
+  /// off-list price, that price — so opening the sheet never silently rewrites
+  /// what the seller configured.
+  late List<num> _shippingOptions;
   late num _shipping;
+
+  /// Whether the seller has touched the dropdown; a late-arriving options list
+  /// then keeps their pick instead of resetting it to the default.
+  bool _shippingPicked = false;
 
   @override
   void initState() {
@@ -41,13 +47,23 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
     // Zero (and anything negative) means "no shipping price configured", not a
     // free lot: the API sends 0 for a product the seller never priced, and
     // showing that as the selection would start the auction on a price nobody
-    // chose. Treated as absent, so the sheet falls back to the 99 kr tier.
+    // chose. Treated as absent, so the sheet falls back to the default amount.
     final raw = p?.shippingPriceNok;
-    final shipping = raw != null && raw > 0 ? raw : null;
-    _shippingOptions = shipping == null || _shippingTiers.contains(shipping)
-        ? _shippingTiers
-        : (<num>[..._shippingTiers, shipping]..sort());
-    _shipping = shipping ?? _defaultShipping;
+    _lotShipping = raw != null && raw > 0 ? raw : null;
+    final service = ShippingOptionsService.instance;
+    _applyShippingOptions(service.current);
+    service.load().then((options) {
+      if (mounted) setState(() => _applyShippingOptions(options));
+    });
+  }
+
+  void _applyShippingOptions(ShippingOptions options) {
+    final keep = _shippingPicked ? _shipping : _lotShipping;
+    final amounts = options.amountsNok;
+    _shippingOptions = keep == null || amounts.contains(keep)
+        ? amounts
+        : (<num>[...amounts, keep]..sort());
+    _shipping = keep ?? options.defaultNok;
   }
 
   @override
@@ -163,7 +179,10 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
               child: _ShippingDropdown(
                 value: _shipping,
                 options: _shippingOptions,
-                onChanged: (v) => setState(() => _shipping = v),
+                onChanged: (v) => setState(() {
+                  _shipping = v;
+                  _shippingPicked = true;
+                }),
               ),
             ),
             const SizedBox(height: 22),
@@ -332,20 +351,7 @@ class _PriceRow extends StatelessWidget {
   }
 }
 
-/// Norwegian price format: space thousands separator, comma decimals, `kr`
-/// suffix — e.g. 2070 → "2 070,00 kr".
-String _price(num v) {
-  final fixed = v.toStringAsFixed(2);
-  final dot = fixed.indexOf('.');
-  final intPart = fixed.substring(0, dot);
-  final dec = fixed.substring(dot + 1);
-  final buf = StringBuffer();
-  for (var i = 0; i < intPart.length; i++) {
-    if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(' ');
-    buf.write(intPart[i]);
-  }
-  return '$buf,$dec kr';
-}
+String _price(num v) => formatNok(v);
 
 class _TypeChip extends StatelessWidget {
   const _TypeChip({required this.label, required this.selected, required this.onTap});
@@ -414,8 +420,7 @@ class _ShippingDropdown extends StatelessWidget {
   }
 }
 
-/// Shipping tier label — "99 NOK", with decimals kept only when they exist.
-String _nok(num v) => '${v % 1 == 0 ? v.toInt() : v} NOK';
+String _nok(num v) => formatNok(v);
 
 class _Field extends StatelessWidget {
   const _Field({required this.controller, this.number = false});

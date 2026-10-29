@@ -66,6 +66,41 @@ class AuctionRoomApi {
     return AuctionRoomSnapshot.fromJson(_data(res));
   }
 
+  /// Buyers watching [streamId] right now, from the public live listing
+  /// (`GET /api/v1/auctions?status=LIVE`) — the same `viewerCount` the buyer
+  /// app's cards and room pill show. Null when the stream isn't in the live
+  /// listing (not live yet, or already over) or the request fails.
+  Future<int?> liveViewerCount(String streamId) async {
+    String? cursor;
+    // A handful of pages is plenty; the live listing is short.
+    for (var page = 0; page < 5; page++) {
+      final url = Uri.parse('${EnvConfig.baseUrl}/api/v1/auctions').replace(
+        queryParameters: {
+          'status': 'LIVE',
+          'limit': '50',
+          if (cursor != null) 'cursor': cursor,
+        },
+      ).toString();
+      // Public endpoint — a 401 here must never trip the app's sign-out flow.
+      final res = await _api.get(url, suppressAuthHandlers: true);
+      if (!res.isSuccess) return null;
+      final data = res.json['data'];
+      if (data is! Map) return null;
+      final items = data['items'];
+      if (items is List) {
+        for (final item in items) {
+          if (item is Map<String, dynamic> && item['id'] == streamId) {
+            return StreamSnapshot.readViewerCount(item) ?? 0;
+          }
+        }
+      }
+      final next = data['nextCursor'];
+      if (next is! String || next.isEmpty) return null;
+      cursor = next;
+    }
+    return null;
+  }
+
   /// `GET /auction-room/queue/catalog` — every product the seller can add to
   /// the queue (with `inQueue` marking the ones already lined up).
   Future<List<CatalogProduct>> queueCatalog(String streamId) async {
@@ -232,21 +267,27 @@ class AuctionRoomApi {
   /// `POST /api/v1/seller/streams/:id/go-live` — SCHEDULED → LIVE. Returns the
   /// stream's end time (ISO) when the response carries it, so the room can show
   /// a countdown even if the snapshot is missing `streamEndsAt`.
-  Future<String?> goLive(String streamId) async {
+  ///
+  /// [session] is sent so the server can refuse a device that isn't the main
+  /// device (403); without it the endpoint stays seller-level.
+  Future<String?> goLive(String streamId, {SellerSession? session}) async {
     final res = await _api.post(
       '${EnvConfig.baseUrl}/api/v1/seller/streams/$streamId/go-live',
       headers: await _headers,
-      body: const <String, dynamic>{},
+      body: session?.authBody ?? const <String, dynamic>{},
     );
     return _pickEndsAt(_data(res));
   }
 
   /// `POST /api/v1/seller/streams/:id/end` — end the whole stream.
-  Future<void> endStream(String streamId) async {
+  ///
+  /// With [session] the server allows it only from the main device — or from
+  /// any session of the stream once no main device is left.
+  Future<void> endStream(String streamId, {SellerSession? session}) async {
     final res = await _api.post(
       '${EnvConfig.baseUrl}/api/v1/seller/streams/$streamId/end',
       headers: await _headers,
-      body: const <String, dynamic>{},
+      body: session?.authBody ?? const <String, dynamic>{},
     );
     _data(res);
   }

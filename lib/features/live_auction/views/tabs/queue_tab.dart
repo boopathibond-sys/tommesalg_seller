@@ -12,8 +12,11 @@ import '../../../../core/widgets/image_pick_crop.dart';
 import '../../controllers/auction_room_controller.dart';
 import '../../data/models/auction_room_snapshot.dart';
 import '../../data/models/catalog_product.dart';
+import '../widgets/queue_product_quick_view.dart';
 import '../widgets/room_sheets.dart';
 import '../../../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
+import '../../../../core/utils/currency.dart';
 
 /// The queue as its own page, pushed from the circular queue button beside the
 /// Live tab's chat field.
@@ -80,6 +83,9 @@ class QueueTab extends StatelessWidget {
               child: Obx(() {
                 final canManage = ctrl.canManageQueue;
                 final queue = ctrl.queueView;
+                // Read here (inside the Obx) so a catalog refresh repaints the
+                // counts — the item builder runs outside this tracking scope.
+                final unitsLeft = ctrl.unitsLeftByProduct;
                 if (queue.isEmpty) return _EmptyQueue(canManage: canManage);
                 // Drag-to-reorder: grab the handle on the left and drop the lot
                 // wherever you want; the position is persisted on release.
@@ -94,6 +100,8 @@ class QueueTab extends StatelessWidget {
                     key: ValueKey(queue[i].productId),
                     ctrl: ctrl,
                     product: queue[i],
+                    unitsLeft: unitsLeft[queue[i].productId] ??
+                        queue[i].stockCount,
                     index: i,
                     canDrag: canManage,
                   ),
@@ -138,10 +146,10 @@ class _QueueActions extends StatelessWidget {
           children: [
             Expanded(
               child: _ActionButton(
-                label: TKeys.qtAddProduct.tr,
-                icon: Icons.add_rounded,
+                label: TKeys.qtAddRandomProduct.tr,
+                icon: Icons.shuffle_rounded,
                 enabled: canManage,
-                onTap: () => _openAddSheet(context, ctrl),
+                onTap: () => _openRandomProductSheet(context, ctrl),
               ),
             ),
             const SizedBox(width: 10),
@@ -234,6 +242,21 @@ Future<void> _confirmRemove(
   if (ok) await ctrl.removeProduct(product.productId);
 }
 
+/// Opens the "create random product" form straight from the queue header. On
+/// success the lot is created *and* queued.
+Future<void> _openRandomProductSheet(
+    BuildContext context, AuctionRoomController ctrl) async {
+  await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _RandomProductSheet(ctrl: ctrl),
+  );
+}
+
+/// Catalog picker — no longer reachable from the queue header, which now opens
+/// [_openRandomProductSheet] directly.
+// ignore: unused_element
 Future<void> _openAddSheet(BuildContext context, AuctionRoomController ctrl) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -250,11 +273,31 @@ class _QueueRow extends StatelessWidget {
     required this.product,
     required this.index,
     required this.canDrag,
+    this.unitsLeft,
   });
   final AuctionRoomController ctrl;
   final AuctionProduct product;
+
+  /// Units of this product left to auction (its stock); each lot started from
+  /// it sells one. Null when the catalog hasn't reported it.
+  final int? unitsLeft;
   final int index;
   final bool canDrag;
+
+  /// The snapshot item may lack the barcode, so take it from the queue
+  /// catalog when needed.
+  void _openQuickView(BuildContext context) {
+    String? upc = product.upc;
+    if (upc == null) {
+      for (final c in ctrl.catalogProducts) {
+        if (c.productId == product.productId) {
+          upc = c.upc;
+          break;
+        }
+      }
+    }
+    showQueueProductQuickView(context, product, upc: upc);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -299,7 +342,10 @@ class _QueueRow extends StatelessWidget {
                 fontWeight: FontWeight.w800, color: AppColors.brandNavy),
           ),
           const SizedBox(width: 10),
-          ClipRRect(
+          // Image + name open the product's quick view.
+          GestureDetector(
+            onTap: () => _openQuickView(context),
+            child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: Container(
               width: 46, height: 46, color: AppColors.inputFill,
@@ -310,28 +356,37 @@ class _QueueRow extends StatelessWidget {
                   : const Icon(Icons.shopping_bag_outlined, color: AppColors.textMuted),
             ),
           ),
+          ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openQuickView(context),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CustomText(product.title, fontSize: 14, fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary, maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 3),
-                Row(
+                // Wraps rather than overflowing: on a narrow phone or with a
+                // large text scale the price drops to its own line.
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     _TypeTag(isDutch: product.isDutch),
-                    if (product.startingPrice != null) ...[
-                      const SizedBox(width: 6),
+                    if (unitsLeft != null) _QuantityTag(units: unitsLeft!),
+                    if (product.originalPrice != null)
                       CustomText(
-                      TKeys.qtFromKr
-                          .trParams({'price': _n(product.startingPrice!)}),
+                          TKeys.qtVeilPrisKr
+                              .trParams({'price': formatNok(product.originalPrice!)}),
                           fontSize: 11.5, fontWeight: FontWeight.w600,
                           color: AppColors.textSecondary),
-                    ],
                   ],
                 ),
               ],
+            ),
             ),
           ),
           // Row actions stack vertically so both can carry a readable label
@@ -417,7 +472,7 @@ class _CatalogSheetState extends State<_CatalogSheet> {
   /// Products already queued can't be picked again, so bulk actions only ever
   /// touch the selectable rows.
   Iterable<CatalogProduct> get _selectable =>
-      widget.ctrl.catalogProducts.where((p) => !p.inQueue);
+      widget.ctrl.catalogProducts.where((p) => !p.inQueue && !p.soldOut);
 
   void _selectAll() {
     setState(() {
@@ -555,7 +610,7 @@ class _CatalogSheetState extends State<_CatalogSheet> {
                       return _CatalogRow(
                         product: p,
                         selected: _selected.contains(p.productId),
-                        onTap: p.inQueue ? null : () => _toggle(p),
+                        onTap: p.inQueue || p.soldOut ? null : () => _toggle(p),
                       );
                     },
                   );
@@ -623,7 +678,7 @@ class _RandomProductSheetState extends State<_RandomProductSheet> {
 
     if (await File(path).length() > _maxImageBytes) {
       if (!mounted) return;
-      Get.snackbar(TKeys.qtImageTooLarge.tr, TKeys.qtPickSmallerImage.tr);
+      AppSnackbar.show(TKeys.qtImageTooLarge.tr, TKeys.qtPickSmallerImage.tr);
       return;
     }
     if (!mounted) return;
@@ -645,7 +700,7 @@ class _RandomProductSheetState extends State<_RandomProductSheet> {
     FocusScope.of(context).unfocus();
     final problem = _validate();
     if (problem != null) {
-      Get.snackbar(TKeys.checkTheForm.tr, problem);
+      AppSnackbar.show(TKeys.checkTheForm.tr, problem);
       return;
     }
 
@@ -659,7 +714,7 @@ class _RandomProductSheetState extends State<_RandomProductSheet> {
     if (!mounted) return;
     if (ok) {
       Navigator.of(context).pop(true);
-      Get.snackbar(TKeys.qtAddedToQueue.tr, '"$title" is lined up as a random lot.');
+      AppSnackbar.show(TKeys.qtAddedToQueue.tr, '"$title" is lined up as a random lot.');
     }
   }
 
@@ -1004,7 +1059,7 @@ class _CatalogRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = product;
-    final disabled = p.inQueue;
+    final disabled = p.inQueue || p.soldOut;
     final image = p.displayImage;
     return Opacity(
       opacity: disabled ? 0.55 : 1,
@@ -1045,22 +1100,33 @@ class _CatalogRow extends StatelessWidget {
                         color: AppColors.textPrimary,
                         maxLines: 2, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
-                    Row(
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _CatalogTypeTag(isRandom: p.isRandom),
-                        if (p.inQueue) ...[
-                          const SizedBox(width: 6),
+                        if (p.soldOut)
+                          CustomText(TKeys.qtSoldOut.tr, fontSize: 11,
+                              fontWeight: FontWeight.w800, color: AppColors.vipps)
+                        else if (p.inQueue)
                           CustomText(TKeys.qtInQueue.tr, fontSize: 11,
-                              fontWeight: FontWeight.w700, color: AppColors.textMuted),
-                        ] else if (p.startingPrice != null) ...[
-                          const SizedBox(width: 6),
+                              fontWeight: FontWeight.w700, color: AppColors.textMuted)
+                        else if (p.veilPris != null)
                           CustomText(
-                      TKeys.qtFromKr.trParams({'price': _n(p.startingPrice!)}),
+                              TKeys.qtVeilPrisKr
+                                  .trParams({'price': formatNok(p.veilPris!)}),
                               fontSize: 11.5, fontWeight: FontWeight.w600,
                               color: AppColors.textSecondary),
-                        ],
                       ],
                     ),
+                    if (!p.soldOut && p.unitsLeft != null) ...[
+                      const SizedBox(height: 3),
+                      CustomText(
+                          TKeys.qtUnitsLeft.trParams({'count': '${p.unitsLeft}'}),
+                          fontSize: 11, fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary),
+                    ],
                   ],
                 ),
               ),
@@ -1176,6 +1242,25 @@ class _CatalogFooter extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "×3" — how many units of a queued product are left to auction.
+class _QuantityTag extends StatelessWidget {
+  const _QuantityTag({required this.units});
+  final int units;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: units > 0 ? AppColors.brandNavy : AppColors.vipps,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: CustomText('×$units', fontSize: 10, fontWeight: FontWeight.w800,
+          color: AppColors.white),
     );
   }
 }
@@ -1311,5 +1396,3 @@ class _EmptyQueue extends StatelessWidget {
     );
   }
 }
-
-String _n(num v) => v % 1 == 0 ? '${v.toInt()}' : '$v';

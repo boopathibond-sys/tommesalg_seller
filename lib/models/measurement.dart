@@ -1,5 +1,6 @@
 import '../core/localization/translation_keys.dart';
 import 'package:get/get.dart';
+import 'package:tommesalg_seller_app/core/utils/s3_key.dart';
 /// Models for the seller measurement module — the "Measurements" section shown in the
 /// product quick views.
 ///
@@ -127,6 +128,7 @@ class MeasurementBundle {
     this.measurements = const [],
     this.measurementTypes = const [],
     this.sizeSpecImages = const [],
+    this.productImages = const [],
     this.status,
     this.categoryId,
   });
@@ -137,6 +139,10 @@ class MeasurementBundle {
   /// `product.sizeSpecImages` — the photos already on the product, as signed
   /// URLs. This is what the section's photo strip renders on open.
   final List<SizeSpecImage> sizeSpecImages;
+
+  /// `product.images` — every image URL on the product, in display order.
+  /// The quick views' image slider uses this rather than the single `image`.
+  final List<String> productImages;
 
   /// `meta.measurementStatus` — "empty" | "recorded".
   final String? status;
@@ -163,6 +169,11 @@ class MeasurementBundle {
       sizeSpecImages: SizeSpecImage.listFrom(
         product['sizeSpecImages'] ?? json['sizeSpecImages'],
       ),
+      productImages: ((product['images'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .where((url) => url.startsWith('http'))
+          .toSet()
+          .toList(),
       status: meta['measurementStatus'] as String?,
       categoryId: meta['categoryId'] as String?,
     );
@@ -193,11 +204,7 @@ class SizeSpecImage {
 
   /// The S3 key behind [value] — the path of a signed URL, or the string
   /// itself when it already is a key.
-  static String keyOf(String value) {
-    if (!value.startsWith('http')) return value;
-    final path = Uri.tryParse(value)?.path ?? value;
-    return path.startsWith('/') ? path.substring(1) : path;
-  }
+  static String keyOf(String value) => s3KeyOf(value);
 
   /// `assets/product-size-spec/…/1784-ovny96.jpg` → `1784-ovny96.jpg`, for the
   /// placeholder tile shown when there is no URL to render.

@@ -9,10 +9,13 @@ import '../../../core/widgets/custom_text.dart';
 import '../../../models/seller_product.dart';
 import '../../../models/seller_product_detail.dart';
 import '../../../models/seller_product_preview.dart';
-import 'edit_product_view.dart';
+import '../edit_product/edit_product_view.dart';
+import '../edit_product/widgets/edit_reason_sheet.dart';
 import 'product_common.dart';
 import 'shipping_options_sheet.dart';
 import '../../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
+import '../../../core/utils/currency.dart';
 
 /// Full-page product details, opened from the My Products grid's View button.
 ///
@@ -92,20 +95,14 @@ class _ProductDetailViewState extends State<ProductDetailView> {
     ]);
   }
 
-  /// Opens the edit form prefilled with what we've already loaded. The
-  /// controller refreshes the detail + preview + list itself after a
-  /// successful PATCH, so the `Obx` below picks the new values up on return.
+  /// Opens the edit screen, which re-reads the product itself. The controller
+  /// refreshes detail + preview + list after a successful PATCH, so the `Obx`
+  /// below picks the new values up on return. A product whose request was
+  /// already submitted still opens — read-only, with its edit history.
   Future<void> _onEdit() async {
-    final preview = widget.ctrl.previewFor(_product.id) ??
-        widget.ctrl.detailFor(_product.id)?.toPreview();
-
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => EditProductView(
-          product: _product,
-          ctrl: widget.ctrl,
-          preview: preview,
-        ),
+        builder: (_) => EditProductView(product: _product, ctrl: widget.ctrl),
       ),
     );
   }
@@ -129,7 +126,7 @@ class _ProductDetailViewState extends State<ProductDetailView> {
     // reselected what was already in force should cost no edit-history entry.
     if (choice.useDefault == !detail.shippingOverrideEnabled &&
         (choice.useDefault || choice.priceNok == detail.shippingPriceNok)) {
-      Get.snackbar(TKeys.shippingSettings.tr, TKeys.shippingNoChange.tr);
+      AppSnackbar.show(TKeys.shippingSettings.tr, TKeys.shippingNoChange.tr);
       return;
     }
 
@@ -139,19 +136,20 @@ class _ProductDetailViewState extends State<ProductDetailView> {
     final ok = await widget.ctrl.updateProduct(
       productId: _product.id,
       editReason: reason,
+      // `useDefaultShipping: true` resets to the platform price on its own;
+      // `shippingPriceNok` must be one of the allowed amounts, so it is only
+      // sent with a custom choice (never as null).
       changes: {
         'useDefaultShipping': choice.useDefault,
-        // Switching back to the platform price clears the override, so the two
-        // fields can never disagree about what the buyer pays.
-        'shippingPriceNok': choice.useDefault ? null : choice.priceNok,
+        if (!choice.useDefault) 'shippingPriceNok': choice.priceNok,
       },
     );
     if (!mounted) return;
 
     if (ok) {
-      Get.snackbar(TKeys.shippingUpdated.tr, TKeys.shippingUpdatedBody.tr);
+      AppSnackbar.show(TKeys.shippingUpdated.tr, TKeys.shippingUpdatedBody.tr);
     } else {
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.errorTitle.tr,
         widget.ctrl.editError ?? TKeys.pleaseTryAgain.tr,
         duration: const Duration(seconds: 5),
@@ -216,11 +214,14 @@ class _ProductDetailViewState extends State<ProductDetailView> {
             final preview = widget.ctrl.previewFor(_product.id);
             final loading = widget.ctrl.isLoadingDetail(_product.id);
 
-            final images = detail?.imageUrls.isNotEmpty == true
-                ? detail!.imageUrls
-                : (preview?.imageUrls.isNotEmpty == true
-                    ? preview!.imageUrls
-                    : widget.initialImages);
+            // Each source may list some images as bare storage keys, which
+            // can't be shown, so use whichever has the most usable URLs. The
+            // queue snapshot, for one, hands over every image ready to load.
+            final images = [
+              detail?.imageUrls ?? const <String>[],
+              preview?.imageUrls ?? const <String>[],
+              widget.initialImages,
+            ].reduce((best, next) => next.length > best.length ? next : best);
 
             if (detail == null && loading) {
               return const Center(
@@ -335,7 +336,9 @@ class _ProductDetailViewState extends State<ProductDetailView> {
         columns: columns,
         items: [
           _Info(TKeys.catalogPrice.tr, _money(detail?.regularPrice), accent: true),
-          _Info(TKeys.fieldOriginalPrice.tr, _money(detail?.originalPrice)),
+          _Info(TKeys.veilPris.tr,
+              _money(detail?.originalPrice ?? _product.originalPrice),
+              accent: true),
           _Info(TKeys.buyNowPrice.tr, _money(detail?.buyNowPrice), accent: true),
           _Info(TKeys.startingPriceAuction.tr, _money(detail?.startingPrice)),
           _Info(TKeys.bidStep.tr, _money(detail?.bidIncrement)),
@@ -722,29 +725,10 @@ class _SplitLayout extends StatelessWidget {
 
 // ── Value formatting ────────────────────────────────────────────────────────
 
-/// `1500` → `1,500.00 kr`, the same grouping the web page uses. Null stays
-/// null so the field renders as "Not stated".
-String? _money(num? value) {
-  if (value == null) return null;
+/// Null stays null so the field renders as "Not stated".
+String? _money(num? value) => value == null ? null : formatNok(value);
 
-  final fixed = value.toStringAsFixed(2);
-  final dot = fixed.indexOf('.');
-  final whole = fixed.substring(0, dot);
-  final decimals = fixed.substring(dot);
-
-  final grouped = StringBuffer();
-  for (var i = 0; i < whole.length; i++) {
-    if (i > 0 && (whole.length - i) % 3 == 0) grouped.write(',');
-    grouped.write(whole[i]);
-  }
-  return '$grouped$decimals kr';
-}
-
-/// `800` → `NOK 800` for the headline tile — whole NOK, as the web shows it.
-String _pricePoint(num? value) {
-  if (value == null) return '—';
-  return 'NOK ${value % 1 == 0 ? value.toInt() : value}';
-}
+String _pricePoint(num? value) => formatNokOrDash(value);
 
 /// Weight carries the catalog's own unit, matching the web page.
 String? _weight(num? value) {
@@ -1119,7 +1103,7 @@ class _TitleBlock extends StatelessWidget {
   }
 }
 
-/// `INVENTORY 14` and `PRICE POINT NOK 800` — the web page's headline tiles,
+/// `INVENTORY 14` and `VEILPRIS 800,00 kr` — the headline tiles,
 /// stacked when there isn't width for both.
 class _HeadlineTiles extends StatelessWidget {
   const _HeadlineTiles({
@@ -1140,12 +1124,11 @@ class _HeadlineTiles extends StatelessWidget {
       icon: Icons.inventory_2_outlined,
     );
     final price = _Tile(
-      label: TKeys.pricePointCaps.tr,
-      value: _pricePoint(detail?.effectivePrice ?? product.effectivePrice),
+      label: TKeys.veilPris.tr.toUpperCase(),
+      value: _pricePoint(detail?.originalPrice ?? product.originalPrice),
       icon: Icons.local_offer_outlined,
       highlighted: true,
     );
-
     // A very narrow phone gets them stacked rather than squeezed.
     if (metrics.width < 340) {
       return Column(
@@ -1412,11 +1395,7 @@ class _ShippingCard extends StatelessWidget {
     );
   }
 
-  /// `99` → `99 NOK`, decimals kept only when they exist.
-  static String _nok(num? value) {
-    if (value == null) return '—';
-    return '${value % 1 == 0 ? value.toInt() : value} NOK';
-  }
+  static String _nok(num? value) => formatNokOrDash(value);
 }
 
 /// Rounded amount chip; the one in force is filled in brand yellow.

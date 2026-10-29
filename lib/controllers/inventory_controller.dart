@@ -1,5 +1,6 @@
 import 'dart:developer';
 
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 
 import '../core/config/env_config.dart';
@@ -13,6 +14,7 @@ import '../models/inventory_stats.dart';
 import '../models/inventory_tag.dart';
 import '../models/product_request_model.dart';
 import '../core/localization/translation_keys.dart';
+import '../core/utils/image_compressor.dart';
 
 /// Drives the Warehouse / Stock tab's data.
 ///
@@ -578,8 +580,9 @@ class InventoryController extends GetxController {
 
   /// Reports / updates the discrepancy for a product via
   /// `PATCH /api/v1/seller/inventory/products/{productId}/issue` with
-  /// `{ message, imageKeys, locationId }`. [imageKeys] are the `s3Key`s of any
-  /// newly-uploaded images. Returns an error message on failure, or `null` on
+  /// `{ message, imageKeys, locationId }`. [imageKeys] is the full image set —
+  /// the report's existing keys plus any newly-uploaded ones — because the
+  /// PATCH replaces it. Returns an error message on failure, or `null` on
   /// success.
   Future<String?> submitProductIssue({
     required String productId,
@@ -592,7 +595,7 @@ class InventoryController extends GetxController {
     try {
       final body = <String, dynamic>{
         'message': message,
-        if (imageKeys.isNotEmpty) 'imageKeys': imageKeys,
+        'imageKeys': imageKeys,
         if (locationId != null && locationId.isNotEmpty)
           'locationId': locationId,
       };
@@ -604,7 +607,7 @@ class InventoryController extends GetxController {
         body: body,
       );
 
-      log('[product-issue] PATCH status=${response.statusCode} body=${response.body}');
+      debugPrint('[product-issue] PATCH sent=$body -> status=${response.statusCode} body=${response.body}');
 
       if (response.isSuccess) {
         final json = response.json;
@@ -638,10 +641,11 @@ class InventoryController extends GetxController {
   /// failure. Shared endpoint with stream issue photos.
   Future<String?> uploadProductRequestImage(String filePath) async {
     try {
+      final uploadPath = await ImageCompressor.compress(filePath);
       final response = await _api.uploadFile(
         '${EnvConfig.baseUrl}/api/v1/seller/product-request-issue-images',
         fieldName: 'file',
-        filePath: filePath,
+        filePath: uploadPath,
         headers: AuthService.instance.authHeaders,
       );
 

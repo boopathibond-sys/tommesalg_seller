@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../controllers/inventory_controller.dart';
 import '../../../controllers/sku_detail_controller.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/image_source_picker.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../models/inventory_placement.dart';
 import '../../../models/location_suggestion.dart';
@@ -16,6 +17,7 @@ import '../../../models/pending_product.dart';
 import 'assigned_product_quick_view.dart';
 import 'stock_widgets.dart';
 import '../../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// Assigned + pending products for a SKU, with an "Assigned / Pending" tab
 /// switcher and full edit + delete actions on both lists.
@@ -123,7 +125,7 @@ class _AssignedProducts extends StatelessWidget {
   ) async {
     final placementId = placement.placementId;
     if (placementId == null || placementId.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotRemoveNow.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.stCannotRemoveNow.tr);
       return;
     }
 
@@ -169,16 +171,16 @@ class _AssignedProducts extends StatelessWidget {
 
     final error = await ctrl.deletePlacement(placementId);
     if (error == null) {
-      Get.snackbar(TKeys.removedTitle.tr, TKeys.stProductRemoved.tr);
+      AppSnackbar.show(TKeys.removedTitle.tr, TKeys.stProductRemoved.tr);
     } else {
-      Get.snackbar(TKeys.errorTitle.tr, error);
+      AppSnackbar.show(TKeys.errorTitle.tr, error);
     }
   }
 
   void _move(BuildContext context, InventoryPlacement placement) {
     final placementId = placement.placementId;
     if (placementId == null || placementId.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotMoveNow.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.stCannotMoveNow.tr);
       return;
     }
     MovePlacementDialog.show(context, ctrl, placement);
@@ -275,7 +277,7 @@ class _PendingProducts extends StatelessWidget {
     PendingProduct product,
   ) async {
     if (product.itemId.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotRemoveNow.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.stCannotRemoveNow.tr);
       return;
     }
 
@@ -323,9 +325,9 @@ class _PendingProducts extends StatelessWidget {
 
     final error = await ctrl.deletePendingUnknown(product.itemId);
     if (error == null) {
-      Get.snackbar(TKeys.stDeletedTitle.tr, TKeys.stPendingRemoved.tr);
+      AppSnackbar.show(TKeys.stDeletedTitle.tr, TKeys.stPendingRemoved.tr);
     } else {
-      Get.snackbar(TKeys.errorTitle.tr, error);
+      AppSnackbar.show(TKeys.errorTitle.tr, error);
     }
   }
 
@@ -745,7 +747,7 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
   Future<void> _save() async {
     final add = int.tryParse(_addCtrl.text.trim());
     if (add == null || add <= 0) {
-      Get.snackbar(TKeys.stInvalidQuantity.tr, TKeys.stEnterQtyOneOrMore.tr);
+      AppSnackbar.show(TKeys.stInvalidQuantity.tr, TKeys.stEnterQtyOneOrMore.tr);
       return;
     }
     final error = await widget.ctrl.incrementPlacement(
@@ -756,9 +758,9 @@ class _EditPlacementDialogState extends State<EditPlacementDialog> {
     if (!mounted) return;
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar(TKeys.savedTitle.tr, TKeys.stAddedToQuantity.trParams({'count': '$add'}));
+      AppSnackbar.show(TKeys.savedTitle.tr, TKeys.stAddedToQuantity.trParams({'count': '$add'}));
     } else {
-      Get.snackbar(TKeys.errorTitle.tr, error);
+      AppSnackbar.show(TKeys.errorTitle.tr, error);
     }
   }
 
@@ -954,11 +956,11 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
     final target = _target;
     final placementId = widget.placement.placementId;
     if (target == null) {
-      Get.snackbar(TKeys.stPickASku.tr, TKeys.stPickTargetSku.tr);
+      AppSnackbar.show(TKeys.stPickASku.tr, TKeys.stPickTargetSku.tr);
       return;
     }
     if (placementId == null || placementId.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.stCannotMoveNow.tr);
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.stCannotMoveNow.tr);
       return;
     }
 
@@ -969,7 +971,7 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
     if (!mounted) return;
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.stMovedTitle.tr,
         TKeys.stProductMovedTo.trParams({'code': target.code}),
         snackPosition: SnackPosition.BOTTOM,
@@ -979,7 +981,7 @@ class _MovePlacementDialogState extends State<MovePlacementDialog> {
     } else {
       // Keep the sheet open so the seller can pick another SKU, and surface the
       // API's own wording (e.g. "Product is already assigned to the target SKU").
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.stCouldNotMove.tr,
         error,
         snackPosition: SnackPosition.BOTTOM,
@@ -1217,8 +1219,6 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
   late final _qtyCtrl =
       TextEditingController(text: '${widget.product.quantity}');
 
-  final _picker = ImagePicker();
-
   /// Existing images (storage keys / URLs) kept on save — removable.
   late final List<String> _existingImages =
       List<String>.from(widget.product.imageUrls);
@@ -1243,7 +1243,7 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
   /// Picks images and uploads each immediately, collecting its `s3Key`
   /// (same flow as the "Add UPC manually" sheet).
   Future<void> _pickImages() async {
-    final picked = await _picker.pickMultiImage();
+    final picked = await ImageSourcePicker.pick(context);
     if (picked.isEmpty || !mounted) return;
 
     setState(() => _uploading += picked.length);
@@ -1259,7 +1259,7 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
         }
       });
       if (s3Key == null) {
-        Get.snackbar(TKeys.csUploadFailed.tr, TKeys.stCouldNotUploadNamed.trParams({'name': img.name}));
+        AppSnackbar.show(TKeys.csUploadFailed.tr, TKeys.stCouldNotUploadNamed.trParams({'name': img.name}));
       }
     }
   }
@@ -1270,11 +1270,11 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
     final name = _nameCtrl.text.trim();
     final qty = int.tryParse(_qtyCtrl.text.trim());
     if (name.isEmpty) {
-      Get.snackbar(TKeys.stMissingName.tr, TKeys.stEnterAProductName.tr);
+      AppSnackbar.show(TKeys.stMissingName.tr, TKeys.stEnterAProductName.tr);
       return;
     }
     if (qty == null || qty < 0) {
-      Get.snackbar(TKeys.stInvalidQuantity.tr, TKeys.stEnterQtyZeroOrMore.tr);
+      AppSnackbar.show(TKeys.stInvalidQuantity.tr, TKeys.stEnterQtyZeroOrMore.tr);
       return;
     }
 
@@ -1300,9 +1300,9 @@ class _EditPendingDialogState extends State<_EditPendingDialog> {
 
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar(TKeys.savedTitle.tr, TKeys.stPendingUpdated.tr);
+      AppSnackbar.show(TKeys.savedTitle.tr, TKeys.stPendingUpdated.tr);
     } else {
-      Get.snackbar(TKeys.errorTitle.tr, error);
+      AppSnackbar.show(TKeys.errorTitle.tr, error);
     }
   }
 

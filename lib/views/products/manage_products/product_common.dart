@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../core/localization/translation_keys.dart';
 import 'package:get/get.dart';
+import '../../../core/utils/currency.dart';
 
 // Small bits shared by the My Products grid and the product details page.
 
@@ -23,11 +24,8 @@ String statusLabel(String value) {
   }
 }
 
-/// `800` → `800.00 kr`; null → `—`.
-String formatPrice(num? value) {
-  if (value == null) return '—';
-  return '${value.toStringAsFixed(2)} kr';
-}
+/// `800` → `800,00 kr`; null → `—`.
+String formatPrice(num? value) => formatNokOrDash(value);
 
 /// `2026-07-18T…` → `18.07.2026`.
 String formatDate(DateTime? date) {

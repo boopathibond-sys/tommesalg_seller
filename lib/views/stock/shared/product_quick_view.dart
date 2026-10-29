@@ -10,6 +10,11 @@ import '../../../core/widgets/custom_text.dart';
 import '../../../models/inventory_search.dart';
 import '../../../models/product_request_model.dart';
 import '../../../core/localization/translation_keys.dart';
+import '../../../core/widgets/image_source_picker.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
+import 'package:tommesalg_seller_app/core/utils/s3_key.dart';
+import '../../../core/utils/currency.dart';
+import 'product_image_carousel.dart';
 
 /// Quick-insert discrepancy presets for the report field.
 enum _DiscrepancyTag { size, color, picture, other }
@@ -71,7 +76,6 @@ class _ProductQuickViewState extends State<ProductQuickView> {
   final TextEditingController _reportCtrl = TextEditingController();
   final List<XFile> _reportImages = <XFile>[];
   final List<String> _existingImageUrls = <String>[];
-  final ImagePicker _picker = ImagePicker();
   bool _submitting = false;
   bool _loadingIssue = true;
 
@@ -133,63 +137,15 @@ class _ProductQuickViewState extends State<ProductQuickView> {
     return _allowedImageExtensions.contains(name.substring(dot + 1));
   }
 
-  /// Asks the user to pick an image source, then captures / picks from it.
+  /// Camera (in-app pro camera) or gallery, via the shared chooser.
   Future<void> _addReportImages() async {
     if (_totalImages >= _maxImages) return;
 
-    final source = await _chooseImageSource();
-    if (source == null || !mounted) return;
-
-    if (source == ImageSource.camera) {
-      final shot = await _picker.pickImage(source: ImageSource.camera);
-      _ingestPicked(shot == null ? const [] : [shot]);
-    } else {
-      final picked = await _picker.pickMultiImage();
-      _ingestPicked(picked);
-    }
-  }
-
-  /// Bottom sheet offering Camera or Gallery.
-  Future<ImageSource?> _chooseImageSource() {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 42,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.inputBorder,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.photo_camera_rounded,
-                  color: AppColors.brandNavy),
-              title: CustomText(TKeys.cameraSource.tr,
-                  fontSize: 15, fontWeight: FontWeight.w700),
-              onTap: () => Navigator.of(sheetCtx).pop(ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_rounded,
-                  color: AppColors.brandNavy),
-              title: CustomText(TKeys.gallerySource.tr,
-                  fontSize: 15, fontWeight: FontWeight.w700),
-              onTap: () => Navigator.of(sheetCtx).pop(ImageSource.gallery),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+    final picked = await ImageSourcePicker.pick(
+      context,
+      maxImages: _maxImages - _totalImages,
     );
+    _ingestPicked(picked);
   }
 
   /// Validates + appends picked images, respecting the max + allowed types.
@@ -202,7 +158,7 @@ class _ProductQuickViewState extends State<ProductQuickView> {
     final rejected = picked.length - allowed.length;
 
     if (rejected > 0) {
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.unsupportedFile.tr,
         TKeys.onlyImageTypes.tr,
         snackPosition: SnackPosition.BOTTOM,
@@ -258,21 +214,26 @@ class _ProductQuickViewState extends State<ProductQuickView> {
   Future<void> _submitReport() async {
     if (_submitting) return;
 
+    // Reason and photos are each optional (sent as `""` / `[]`), but a
+    // report needs at least one of them.
     final message = _reportCtrl.text.trim();
-    if (message.isEmpty) {
-      Get.snackbar(TKeys.errorTitle.tr, TKeys.describeDiscrepancyError.tr);
+    if (message.isEmpty && _totalImages == 0) {
+      AppSnackbar.show(TKeys.errorTitle.tr, TKeys.reportReasonOrImage.tr);
       return;
     }
 
     setState(() => _submitting = true);
 
-    final imageKeys = <String>[];
+    // The PATCH replaces the image set, so the photos already on the report
+    // go back with the new ones — otherwise editing only the reason would
+    // wipe them.
+    final imageKeys = <String>[..._existingImageUrls.map(s3KeyOf)];
     for (final img in _reportImages) {
       final key = await widget.ctrl.uploadProductRequestImage(img.path);
       if (key == null) {
         if (!mounted) return;
         setState(() => _submitting = false);
-        Get.snackbar(
+        AppSnackbar.show(
           TKeys.errorTitle.tr,
           TKeys.stCouldNotUploadNamed.trParams({'name': img.name}),
           snackPosition: SnackPosition.BOTTOM,
@@ -295,7 +256,7 @@ class _ProductQuickViewState extends State<ProductQuickView> {
 
     if (error == null) {
       Navigator.of(context).pop();
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.successTitle.tr,
         TKeys.reportUpdated.tr,
         snackPosition: SnackPosition.BOTTOM,
@@ -303,7 +264,7 @@ class _ProductQuickViewState extends State<ProductQuickView> {
         colorText: Colors.white,
       );
     } else {
-      Get.snackbar(
+      AppSnackbar.show(
         TKeys.errorTitle.tr,
         error,
         snackPosition: SnackPosition.BOTTOM,
@@ -320,6 +281,16 @@ class _ProductQuickViewState extends State<ProductQuickView> {
     return (fromProduct != null && fromProduct.isNotEmpty) ? fromProduct : '';
   }
 
+  /// Every product image for the carousel, falling back to [_imageUrl].
+  List<String> get _images {
+    final gallery = (_product?.images ?? const <String>[])
+        .where((url) => url.startsWith('http'))
+        .toSet()
+        .toList();
+    if (gallery.isNotEmpty) return gallery;
+    return _imageUrl.isEmpty ? const [] : [_imageUrl];
+  }
+
   String get _productName {
     final n = _product?.name;
     if (n != null && n.isNotEmpty) return n;
@@ -329,9 +300,7 @@ class _ProductQuickViewState extends State<ProductQuickView> {
   String get _brand => _product?.brand ?? '';
   String get _upc => (_hit.upc?.isNotEmpty ?? false) ? _hit.upc! : '—';
   String get _suggestedPrice =>
-      _product?.originalPrice != null ? '${_product!.originalPrice} NOK' : '-';
-  String get _regularPrice =>
-      _product?.regularPrice != null ? '${_product!.regularPrice} NOK' : '-';
+      formatNokOrDash(_product?.originalPrice);
   String get _color =>
       _product?.colour ??
       ((_product?.colorsAvailable.isNotEmpty ?? false)
@@ -488,42 +457,7 @@ class _ProductQuickViewState extends State<ProductQuickView> {
   }
 
   Widget _buildHeroImage() {
-    return Center(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: 1,
-          child: Container(
-            color: AppColors.inputFill,
-            child: _imageUrl.isEmpty
-                ? Center(
-                    child: _loading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(
-                            Icons.image_not_supported_outlined,
-                            size: 40,
-                            color: AppColors.textMuted,
-                          ),
-                  )
-                : Image.network(
-                    _imageUrl,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Center(
-                      child: Icon(
-                        Icons.image_not_supported_outlined,
-                        size: 40,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
+    return ProductImageCarousel(images: _images, loading: _loading);
   }
 
   Widget _buildBrandAndTitle() {
@@ -556,7 +490,6 @@ class _ProductQuickViewState extends State<ProductQuickView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(child: _priceColumn(TKeys.stSuggestedRetail.tr, _suggestedPrice)),
-        Expanded(child: _priceColumn('MSRP', _regularPrice)),
       ],
     );
   }

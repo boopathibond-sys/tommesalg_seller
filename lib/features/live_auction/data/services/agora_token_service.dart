@@ -2,23 +2,33 @@ import '../../../../core/config/env_config.dart';
 import '../../../../core/services/api_client.dart';
 import '../../../../core/services/auth_service.dart';
 import '../models/agora_token.dart';
+import '../models/seller_session.dart';
 
 /// Fetches Agora RTC + RTM tokens from the backend. The server owns the Agora
 /// App ID and certificate, so the client ships neither — every join uses a
-/// freshly-issued, backend-signed token authorized by the seller's Supabase
+/// freshly-issued, backend-signed token authorized by the seller's Cognito
 /// bearer.
 class AgoraTokenService {
   final _api = ApiClient.instance;
 
   /// `POST /api/v1/agora/token` → RTC token for the video channel.
+  ///
+  /// With [session] the server mints a *publisher* token only for the main
+  /// device and a subscriber token for any other seller device, so a second
+  /// phone can't broadcast into the stream even if it tried.
   Future<RtcTokenResponse> fetchRtcToken({
     required String channelName,
     required int uid,
+    SellerSession? session,
   }) async {
     final res = await _api.post(
       '${EnvConfig.baseUrl}/api/v1/agora/token',
       headers: await AuthService.instance.ensuredAuthHeaders(),
-      body: {'channelName': channelName, 'uid': uid},
+      body: {
+        'channelName': channelName,
+        'uid': uid,
+        if (session != null) ...session.authBody,
+      },
     );
     return RtcTokenResponse.fromJson(_unwrap(res));
   }

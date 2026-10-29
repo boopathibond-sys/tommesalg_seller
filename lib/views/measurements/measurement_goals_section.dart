@@ -7,9 +7,12 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/services/measurement_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/image_compressor.dart';
 import '../../core/widgets/custom_text.dart';
+import '../../core/widgets/image_source_picker.dart';
 import '../../models/measurement.dart';
 import '../../core/localization/translation_keys.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
 
 /// The "Measurements" block embedded in the product quick views — optional
 /// clothing measurements and size / spec photos the seller records per
@@ -29,6 +32,7 @@ class MeasurementGoalsSection extends StatefulWidget {
     required this.productId,
     this.placementId,
     this.skuCode,
+    this.onProductImages,
   });
 
   final String productId;
@@ -38,6 +42,10 @@ class MeasurementGoalsSection extends StatefulWidget {
 
   /// SKU code, shown in the section's subtitle when known.
   final String? skuCode;
+
+  /// Called with the bundle's `product.images` each time it loads, so the
+  /// host quick view can feed its image slider.
+  final ValueChanged<List<String>>? onProductImages;
 
   @override
   State<MeasurementGoalsSection> createState() =>
@@ -95,10 +103,27 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
 
   bool _uploadingPhotos = false;
 
-  final ImagePicker _picker = ImagePicker();
+  /// The photo card is read-only until its pencil is tapped; editing shows
+  /// the add tile, remove buttons and Cancel / Save.
+  bool _editingPhotos = false;
+
+  /// [_photos] as they were when editing began, restored by Cancel.
+  List<_SpecPhoto> _photosBeforeEdit = const [];
+
+  /// Bumped on every [_load]; a response whose token is no longer current
+  /// belongs to an older request (or an older product) and is dropped.
+  int _loadToken = 0;
+
+  /// Per-photo retry count, folded into the thumb's key so a tap on a failed
+  /// thumb builds a fresh [Image.network] instead of reusing the error.
+  final Map<String, int> _photoAttempts = <String, int>{};
 
   /// Ceiling on attached photos, and the API's own file rules.
-  static const int _maxPhotos = 10;
+  static const int _maxPhotos = 5;
+
+  /// Adding measurement types (the dropdown + Add) is switched off for now;
+  /// rows already saved still show and can be edited or removed.
+  static const bool _typePickerEnabled = false;
   static const int _maxPhotoBytes = 5 * 1024 * 1024;
   static const Set<String> _allowedPhotoExtensions = {
     'jpg',
@@ -115,6 +140,20 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
   List<MeasurementType> get _available {
     final used = _rows.map((r) => r.type.key).toSet();
     return _types.where((t) => !used.contains(t.key)).toList();
+  }
+
+  /// Type chosen in the picker. Falls back to the first available type, so a
+  /// default is always pre-selected and one tap on Add is enough.
+  MeasurementType? _pickedType;
+
+  MeasurementType? get _selectedType {
+    final available = _available;
+    if (available.isEmpty) return null;
+    final picked = _pickedType;
+    if (picked != null && available.any((t) => t.key == picked.key)) {
+      return available.firstWhere((t) => t.key == picked.key);
+    }
+    return available.first;
   }
 
   bool get _hasChangesToSave =>
@@ -139,6 +178,19 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
   }
 
   @override
+  void didUpdateWidget(covariant MeasurementGoalsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Same State handed a different product — reload rather than keep
+    // showing the previous product's values and photos.
+    if (oldWidget.productId != widget.productId ||
+        oldWidget.placementId != widget.placementId) {
+      _pickedType = null;
+      _photoAttempts.clear();
+      _load();
+    }
+  }
+
+  @override
   void dispose() {
     for (final c in _retired) {
       c.dispose();
@@ -156,17 +208,30 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
     _rows.clear();
   }
 
-  Future<void> _load() async {
+  /// Reads the bundle and rebuilds the form. With [keepPhotos] only the
+  /// measurements are refreshed — used right after a save, when the bundle
+  /// may not reflect the photo set just written yet.
+  Future<void> _load({bool keepPhotos = false}) async {
+    final token = ++_loadToken;
     setState(() {
       _loading = true;
       _loadError = null;
     });
 
-    final bundle = await MeasurementService.instance.fetchBundle(
+    // One quiet retry — a single dropped request otherwise leaves the
+    // section on its error state with no photos.
+    var bundle = await MeasurementService.instance.fetchBundle(
       productId: widget.productId,
     );
+    if (bundle == null && mounted && token == _loadToken) {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (!mounted || token != _loadToken) return;
+      bundle = await MeasurementService.instance.fetchBundle(
+        productId: widget.productId,
+      );
+    }
 
-    if (!mounted) return;
+    if (!mounted || token != _loadToken) return;
 
     if (bundle == null) {
       setState(() {
@@ -184,10 +249,11 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
 
     setState(() {
       _types = types;
-      _applyMeasurements(bundle.measurements);
-      _applyPhotos(bundle.sizeSpecImages);
+      _applyMeasurements(bundle!.measurements);
+      if (!keepPhotos) _applyPhotos(bundle.sizeSpecImages);
       _loading = false;
     });
+    widget.onProductImages?.call(bundle.productImages);
   }
 
   /// Rebuilds the form from a server-authoritative set of measurements. Call
@@ -251,6 +317,8 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
   void _addRow(MeasurementType type) {
     setState(() {
       _rows.add(_GoalRow(type: type, controller: TextEditingController()));
+      // Next default is whatever is first among the remaining types.
+      _pickedType = null;
     });
   }
 
@@ -270,20 +338,16 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
   Future<void> _addPhotos() async {
     if (_uploadingPhotos || _photos.length >= _maxPhotos) return;
 
-    final source = await _choosePhotoSource();
-    if (source == null || !mounted) return;
-
-    final List<XFile> picked;
-    if (source == ImageSource.camera) {
-      final shot = await _picker.pickImage(source: ImageSource.camera);
-      picked = shot == null ? const [] : [shot];
-    } else {
-      picked = await _picker.pickMultiImage();
-    }
+    final room = _maxPhotos - _photos.length;
+    // Camera opens the in-app pro camera (lenses, flash, exposure, focus
+    // lock, zoom, timer …); gallery re-encodes HEIC to JPEG.
+    final picked = await ImageSourcePicker.pick(context, maxImages: room);
     if (picked.isEmpty || !mounted) return;
 
-    final room = _maxPhotos - _photos.length;
-    final queue = <XFile>[];
+    setState(() => _uploadingPhotos = true);
+
+    // Compress first so the 5 MB check applies to what is actually sent.
+    final queue = <String>[];
     var rejectedType = 0;
     var rejectedSize = 0;
 
@@ -293,11 +357,12 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
         rejectedType += 1;
         continue;
       }
-      if (await File(file.path).length() > _maxPhotoBytes) {
+      final path = await ImageCompressor.compress(file.path);
+      if (await File(path).length() > _maxPhotoBytes) {
         rejectedSize += 1;
         continue;
       }
-      queue.add(file);
+      queue.add(path);
     }
 
     if (!mounted) return;
@@ -307,14 +372,15 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
     if (rejectedSize > 0) {
       _snack(TKeys.msTooLarge.tr, TKeys.msMaxFiveMb.tr, ok: false);
     }
-    if (queue.isEmpty) return;
+    if (queue.isEmpty) {
+      setState(() => _uploadingPhotos = false);
+      return;
+    }
 
-    setState(() => _uploadingPhotos = true);
-
-    for (final file in queue) {
+    for (final path in queue) {
       final result = await MeasurementService.instance.uploadSizeSpecImage(
         productId: widget.productId,
-        filePath: file.path,
+        filePath: path,
       );
       if (!mounted) return;
 
@@ -329,7 +395,7 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
           _SpecPhoto(
             key: result.image!.key,
             url: result.image!.url,
-            localPath: file.path,
+            localPath: path,
           ),
         );
       });
@@ -346,57 +412,32 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
     return _allowedPhotoExtensions.contains(name.substring(dot + 1));
   }
 
-  /// Bottom sheet offering Camera or Gallery.
-  Future<ImageSource?> _choosePhotoSource() {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 42,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.inputBorder,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.photo_camera_rounded,
-                  color: AppColors.brandNavy),
-              title: CustomText(TKeys.cameraSource.tr,
-                  fontSize: 15, fontWeight: FontWeight.w700),
-              onTap: () => Navigator.of(sheetCtx).pop(ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_rounded,
-                  color: AppColors.brandNavy),
-              title: CustomText(TKeys.gallerySource.tr,
-                  fontSize: 15, fontWeight: FontWeight.w700),
-              onTap: () => Navigator.of(sheetCtx).pop(ImageSource.gallery),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// Drops a thumb locally. There is no remove endpoint — Save sends the
   /// remaining keys, and the server keeps exactly those.
   void _removePhoto(int index) {
     setState(() => _photos.removeAt(index));
   }
 
+  void _startEditingPhotos() {
+    setState(() {
+      _photosBeforeEdit = List.of(_photos);
+      _editingPhotos = true;
+    });
+  }
+
+  /// Drops this session's photo changes. Photos already uploaded stay in S3
+  /// unattached — the API has no delete, and nothing references them.
+  void _cancelEditingPhotos() {
+    setState(() {
+      _photos
+        ..clear()
+        ..addAll(_photosBeforeEdit);
+      _editingPhotos = false;
+    });
+  }
+
   void _snack(String title, String message, {required bool ok}) {
-    Get.snackbar(
+    AppSnackbar.show(
       title,
       message,
       snackPosition: SnackPosition.BOTTOM,
@@ -410,16 +451,23 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
   Future<void> _save() async {
     if (_saving) return;
 
+    // Measurements are optional — a row left blank is skipped rather than
+    // blocking the save, so photos can be saved without any values. A saved
+    // row the seller cleared is deleted.
     final inputs = <MeasurementInput>[];
+    final clearedIds = <String>{};
     for (final row in _rows) {
       final raw = row.controller.text.trim().replaceAll(',', '.');
       if (raw.isEmpty) {
-        _snack(TKeys.errorTitle.tr, TKeys.msEnterValueFor.trParams({'field': row.type.label}), ok: false);
-        return;
+        final id = row.measurementId;
+        if (id != null) clearedIds.add(id);
+        continue;
       }
       final value = double.tryParse(raw);
       if (value == null || value <= 0) {
-        _snack(TKeys.errorTitle.tr, TKeys.msEnterValidCm.trParams({'field': row.type.label}), ok: false);
+        _snack(TKeys.errorTitle.tr,
+            TKeys.msEnterValidCm.trParams({'field': row.type.label}),
+            ok: false);
         return;
       }
       inputs.add(MeasurementInput(fieldKey: row.type.key, valueCm: value));
@@ -427,7 +475,7 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
 
     setState(() => _saving = true);
 
-    for (final id in _removedIds) {
+    for (final id in {..._removedIds, ...clearedIds}) {
       final error = await MeasurementService.instance.deleteMeasurement(id);
       if (error != null) {
         if (!mounted) return;
@@ -477,18 +525,67 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
       setState(() {
         _applyMeasurements(saved);
         _saving = false;
+        _editingPhotos = false;
       });
       return;
     }
-    setState(() => _saving = false);
-    await _load();
+    setState(() {
+      _saving = false;
+      _editingPhotos = false;
+    });
+    await _load(keepPhotos: true);
   }
 
   // ---------- Presentation ----------
 
   @override
   Widget build(BuildContext context) {
+    final ready = !_loading && _loadError == null;
+    // Two cards: the measurement values, then the size / spec photos. One
+    // Save below covers both.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildCard(
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 6),
+            CustomText(
+              _subtitle,
+              fontSize: 12,
+              height: 1.45,
+              color: AppColors.textSecondary,
+            ),
+            const SizedBox(height: 14),
+            if (_loading)
+              _buildLoading()
+            else if (_loadError != null)
+              _buildLoadError()
+            else ...[
+              if (_rows.isEmpty) _buildEmptyState() else _buildGoalList(),
+              const SizedBox(height: 10),
+              _buildTypePicker(),
+              // Saved values stay editable; while the photo card is being
+              // edited its own Save covers them too.
+              if ((_rows.isNotEmpty || _removedIds.isNotEmpty) &&
+                  !_editingPhotos) ...[
+                const SizedBox(height: 12),
+                _buildSaveButton(TKeys.msSaveMeasurements.tr),
+              ],
+            ],
+          ],
+        ),
+        if (ready) ...[
+          const SizedBox(height: 12),
+          _buildCard(children: [_buildPhotosBlock()]),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCard({required List<Widget> children}) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
         color: AppColors.inputFill,
@@ -497,30 +594,7 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 6),
-          CustomText(
-            _subtitle,
-            fontSize: 12,
-            height: 1.45,
-            color: AppColors.textSecondary,
-          ),
-          const SizedBox(height: 14),
-          if (_loading)
-            _buildLoading()
-          else if (_loadError != null)
-            _buildLoadError()
-          else ...[
-            if (_rows.isEmpty) _buildEmptyState() else _buildGoalList(),
-            const SizedBox(height: 10),
-            _buildTypePicker(),
-            const SizedBox(height: 16),
-            _buildPhotosBlock(),
-            const SizedBox(height: 14),
-            _buildSaveButton(),
-          ],
-        ],
+        children: children,
       ),
     );
   }
@@ -645,13 +719,15 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
             fontWeight: FontWeight.w700,
             color: AppColors.textSecondary,
           ),
-          const SizedBox(height: 3),
-          CustomText(
-            TKeys.msPickTargetType.tr,
-            fontSize: 11.5,
-            textAlign: TextAlign.center,
-            color: AppColors.textMuted,
-          ),
+          if (_typePickerEnabled) ...[
+            const SizedBox(height: 3),
+            CustomText(
+              TKeys.msPickTargetType.tr,
+              fontSize: 11.5,
+              textAlign: TextAlign.center,
+              color: AppColors.textMuted,
+            ),
+          ],
         ],
       ),
     );
@@ -766,9 +842,8 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
         height: 28,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: enabled
-              ? AppColors.vipps.withOpacity(0.1)
-              : AppColors.inputFill,
+          color:
+              enabled ? AppColors.vipps.withOpacity(0.1) : AppColors.inputFill,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(
@@ -780,57 +855,97 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
     );
   }
 
-  /// Target-type dropdown. Its value stays null so it always reads
-  /// "Select target type" — picking an option adds a row instead of becoming
-  /// the selection. Types already on the form drop out of the list.
+  /// Target-type dropdown with a default type pre-selected (the first one not
+  /// yet on the form), plus an Add button that puts it on the form. Types
+  /// already added drop out of the list.
   Widget _buildTypePicker() {
     final available = _available;
-    final enabled = available.isNotEmpty && !_saving;
+    final selected = _selectedType;
+    final enabled = _typePickerEnabled && selected != null && !_saving;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.grey),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<MeasurementType>(
-          value: null,
-          isExpanded: true,
-          borderRadius: BorderRadius.circular(12),
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: enabled ? AppColors.textSecondary : AppColors.textMuted,
-          ),
-          hint: _pickerLabel(
-            icon: Icons.add_rounded,
-            text: TKeys.msSelectTargetType.tr,
-            muted: false,
-          ),
-          disabledHint: _pickerLabel(
-            icon: Icons.check_rounded,
-            text: TKeys.msAllTargetTypes.tr,
-            muted: true,
-          ),
-          items: available.map((type) {
-            return DropdownMenuItem<MeasurementType>(
-              value: type,
-              child: CustomText(
-                type.label,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.grey),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<MeasurementType>(
+                value: selected,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(12),
+                icon: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color:
+                      enabled ? AppColors.textSecondary : AppColors.textMuted,
+                ),
+                hint: _pickerLabel(
+                  icon: Icons.add_rounded,
+                  text: TKeys.msSelectTargetType.tr,
+                  muted: false,
+                ),
+                // A disabled dropdown always shows this, so while saving keep
+                // the selected type on screen.
+                disabledHint: selected == null
+                    ? _pickerLabel(
+                        icon: Icons.check_rounded,
+                        text: TKeys.msAllTargetTypes.tr,
+                        muted: true,
+                      )
+                    : CustomText(
+                        selected.label,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMuted,
+                      ),
+                items: available.map((type) {
+                  return DropdownMenuItem<MeasurementType>(
+                    value: type,
+                    child: CustomText(
+                      type.label,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  );
+                }).toList(),
+                onChanged: enabled
+                    ? (type) => setState(() => _pickedType = type)
+                    : null,
               ),
-            );
-          }).toList(),
-          onChanged: enabled
-              ? (type) {
-                  if (type != null) _addRow(type);
-                }
-              : null,
+            ),
+          ),
         ),
-      ),
+        const SizedBox(width: 8),
+        SizedBox(
+          height: 48,
+          child: ElevatedButton.icon(
+            onPressed: enabled ? () => _addRow(selected) : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.brandNavy,
+              foregroundColor: AppColors.white,
+              disabledBackgroundColor: AppColors.brandNavy.withOpacity(0.3),
+              disabledForegroundColor: AppColors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: CustomText(
+              TKeys.addAction.tr,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: AppColors.white,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -869,10 +984,12 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
     );
   }
 
-  /// Size / spec photo strip: what's on the product, plus anything added
-  /// here, with an Add tile at the end.
+  /// Size / spec photo card. Read-only by default — the photos on the product
+  /// (or an empty note) and a pencil; editing adds the Add tile, remove
+  /// buttons and Cancel / Save.
   Widget _buildPhotosBlock() {
     final atLimit = _photos.length >= _maxPhotos;
+    final editing = _editingPhotos;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -880,11 +997,11 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
         Row(
           children: [
             const Icon(Icons.photo_library_outlined,
-                size: 15, color: AppColors.brandNavy),
+                size: 17, color: AppColors.brandNavy),
             const SizedBox(width: 7),
             CustomText(
               TKeys.msMeasurementPhotos.tr,
-              fontSize: 12.5,
+              fontSize: 14.5,
               fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
             ),
@@ -895,30 +1012,78 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
               fontWeight: FontWeight.w700,
               color: AppColors.textMuted,
             ),
+            if (!editing)
+              IconButton(
+                onPressed: _saving ? null : _startEditingPhotos,
+                tooltip: TKeys.edit.tr,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.edit_outlined,
+                    size: 18, color: AppColors.brandNavy),
+              ),
           ],
         ),
         const SizedBox(height: 4),
         CustomText(
           TKeys.msPhotoHint.tr,
-          fontSize: 11.5,
-          height: 1.4,
-          color: AppColors.textMuted,
+          fontSize: 12,
+          height: 1.45,
+          color: AppColors.textSecondary,
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          height: 84,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _photos.length + 1,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              if (index == _photos.length) {
-                return _buildAddPhotoTile(atLimit);
-              }
-              return _buildPhotoThumb(index);
-            },
+        if (!editing && _photos.isEmpty)
+          CustomText(
+            TKeys.msNoPhotos.tr,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textMuted,
+          )
+        else
+          SizedBox(
+            height: 84,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _photos.length + (editing ? 1 : 0),
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                if (index == _photos.length) {
+                  return _buildAddPhotoTile(atLimit);
+                }
+                return _buildPhotoThumb(index, removable: editing);
+              },
+            ),
           ),
-        ),
+        if (editing) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 46,
+                  child: OutlinedButton(
+                    onPressed: _saving || _uploadingPhotos
+                        ? null
+                        : _cancelEditingPhotos,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textPrimary,
+                      side: const BorderSide(color: AppColors.grey),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: CustomText(
+                      TKeys.cancelAction.tr,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: _buildSaveButton(TKeys.save.tr)),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -950,9 +1115,7 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    atLimit
-                        ? Icons.check_rounded
-                        : Icons.add_a_photo_outlined,
+                    atLimit ? Icons.check_rounded : Icons.add_a_photo_outlined,
                     size: 20,
                     color: enabled ? AppColors.brandNavy : AppColors.textMuted,
                   ),
@@ -961,8 +1124,8 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
                     atLimit ? TKeys.msLimit.tr : TKeys.msAddPhoto.tr,
                     fontSize: 10.5,
                     fontWeight: FontWeight.w700,
-                    color: enabled ? AppColors.textSecondary
-                        : AppColors.textMuted,
+                    color:
+                        enabled ? AppColors.textSecondary : AppColors.textMuted,
                   ),
                 ],
               ),
@@ -973,7 +1136,7 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
   /// One thumb — the local file while the seller is still on this dialog, the
   /// signed URL once it comes back from the server, and a named placeholder
   /// when all we hold is an S3 key.
-  Widget _buildPhotoThumb(int index) {
+  Widget _buildPhotoThumb(int index, {required bool removable}) {
     final photo = _photos[index];
     final url = photo.url != null && photo.url!.startsWith('http')
         ? photo.url
@@ -986,43 +1149,77 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
         width: 84,
         height: 84,
         fit: BoxFit.cover,
+        cacheWidth: (84 * MediaQuery.devicePixelRatioOf(context)).round(),
+        errorBuilder: (_, __, ___) => _photoPlaceholder(photo),
       );
     } else if (url != null) {
+      final attempt = _photoAttempts[photo.key] ?? 0;
+      final cacheSize = (84 * MediaQuery.devicePixelRatioOf(context)).round();
       image = Image.network(
         url,
+        key: ValueKey('${photo.key}#$attempt'),
         width: 84,
         height: 84,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _photoPlaceholder(photo),
+        // Decode at thumb size — full-resolution phone photos made the strip
+        // slow to appear and heavy on memory.
+        cacheWidth: cacheSize,
+        gaplessPlayback: true,
+        loadingBuilder: (_, child, progress) =>
+            progress == null ? child : _photoLoading(),
+        errorBuilder: (_, __, ___) => GestureDetector(
+          onTap: () => setState(
+            () => _photoAttempts[photo.key] = attempt + 1,
+          ),
+          child: _photoPlaceholder(photo, retry: true),
+        ),
       );
     } else {
       image = _photoPlaceholder(photo);
     }
 
     return Stack(
+      key: ValueKey(photo.key),
       children: [
         ClipRRect(borderRadius: BorderRadius.circular(12), child: image),
-        Positioned(
-          top: 4,
-          right: 4,
-          child: GestureDetector(
-            onTap: _saving ? null : () => _removePhoto(index),
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
+        if (removable)
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: _saving ? null : () => _removePhoto(index),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 12, color: Colors.white),
               ),
-              child: const Icon(Icons.close, size: 12, color: Colors.white),
             ),
           ),
-        ),
       ],
     );
   }
 
-  /// Stand-in for a photo we only have the key of.
-  Widget _photoPlaceholder(_SpecPhoto photo) {
+  /// Shown while a thumb's URL is still downloading.
+  Widget _photoLoading() {
+    return Container(
+      width: 84,
+      height: 84,
+      color: AppColors.white,
+      alignment: Alignment.center,
+      child: const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    );
+  }
+
+  /// Stand-in for a photo we only have the key of, or whose URL failed to
+  /// load ([retry] adds a tap-to-retry hint).
+  Widget _photoPlaceholder(_SpecPhoto photo, {bool retry = false}) {
     return Container(
       width: 84,
       height: 84,
@@ -1031,8 +1228,8 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.image_outlined, size: 18,
-              color: AppColors.textMuted),
+          Icon(retry ? Icons.refresh_rounded : Icons.image_outlined,
+              size: 18, color: AppColors.textMuted),
           const SizedBox(height: 6),
           CustomText(
             photo.fileName,
@@ -1047,8 +1244,8 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
     );
   }
 
-  Widget _buildSaveButton() {
-    final enabled = !_saving && _hasChangesToSave;
+  Widget _buildSaveButton(String label) {
+    final enabled = !_saving && !_uploadingPhotos && _hasChangesToSave;
     return SizedBox(
       width: double.infinity,
       height: 46,
@@ -1074,7 +1271,7 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
                 ),
               )
             : CustomText(
-                TKeys.msSaveMeasurements.tr,
+                label,
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,

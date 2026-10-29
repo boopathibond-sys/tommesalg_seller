@@ -7,6 +7,7 @@ import '../../controllers/notification_controller.dart';
 import '../../controllers/profile_controller.dart';
 import '../../core/config/get_or_put.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/social_auth_service.dart';
 import '../../features/notifications/application/push_notification_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/custom_text.dart';
@@ -56,6 +57,11 @@ class _SplashViewState extends State<SplashView>
 
   /// Restore-or-refresh, started at t=0 so it overlaps the intro animation.
   late final Future<AuthStatus> _bootstrap;
+
+  /// Set when this launch finished a Google / Apple sign-in that Android
+  /// interrupted by killing the app. That session hasn't passed the seller
+  /// gate yet, so it goes through Login's gate instead of straight to Home.
+  bool _coldStartSocial = false;
 
   @override
   void initState() {
@@ -116,8 +122,15 @@ class _SplashViewState extends State<SplashView>
   /// Resolves the session, and — when there is one — starts Home's requests
   /// straight away so the intro animation and the round-trips overlap.
   Future<AuthStatus> _runBootstrap() async {
+    // Before the session check, so the session it creates is the one restored.
+    final cold = await SocialAuthService.completeColdStartCallback();
+    if (cold != null) {
+      await AuthService.instance.signInWithSocial(cold);
+      _coldStartSocial = true;
+    }
+
     final status = await AuthService.instance.bootstrap();
-    if (status == AuthStatus.authenticated && mounted) {
+    if (status == AuthStatus.authenticated && !_coldStartSocial && mounted) {
       unawaited(_primeHomeData());
     }
     return status;
@@ -143,7 +156,7 @@ class _SplashViewState extends State<SplashView>
   /// `onInit`, so simply creating them here starts the work; `getOrPut` hands
   /// Home these same instances, by which point the data has usually landed.
   ///
-  /// Safe to call at this point: `Supabase.initialize()` is awaited in `main()`
+  /// Safe to call at this point: `AuthService.init()` is awaited in `main()`
   /// before the app runs, so a restored session is already visible to
   /// [AuthService.isLoggedIn] — a signed-in check here can't be a false
   /// negative, and the requests carry a real token.
@@ -165,8 +178,10 @@ class _SplashViewState extends State<SplashView>
 
   void _navigate(AuthStatus status) {
     if (!mounted) return;
-    final signedIn = status == AuthStatus.authenticated;
-    final destination = signedIn ? const HomeView() : const LoginView();
+    final signedIn = status == AuthStatus.authenticated && !_coldStartSocial;
+    final destination = signedIn
+        ? const HomeView()
+        : LoginView(runSellerGateOnOpen: _coldStartSocial);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => destination),
     );

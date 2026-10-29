@@ -1,0 +1,251 @@
+# Mobile seller — "Mine produkter" list (API v1)
+
+Audience: mobile developers (Flutter). This guide covers one endpoint, `GET /api/v1/seller/products`, which feeds the **Mine produkter** page in the seller app. It is the mobile twin of the web page `/seller/products` and returns the same products.
+
+| | |
+|---|---|
+| Endpoint | `GET /api/v1/seller/products` |
+| Staging | `https://staging.tommesalg.no/api/v1/seller/products` |
+| Production | `https://tommesalg.no/api/v1/seller/products` |
+| Auth | `Authorization: Bearer <accessToken>`, role `seller` |
+| Rate limit | 60 requests / minute per token |
+| Postman | Collection **Tommesalg API** → Seller Mobile (V1) → Seller Products (V1) → **Products - List (all streams)** |
+
+> **History.** This route was removed on 2026-10-24 (it returned `404`) and restored on 2026-10-28 with new rules. It no longer lists products "assigned" to the seller. If you built against the old behaviour, follow this document instead.
+
+---
+
+## 1. What the list contains
+
+| Seller type | Products returned |
+|---|---|
+| **Managed** | Catalog products the seller has **scanned into their own stream product requests**, across all their streams. Pass `streamId` to narrow to one stream. |
+| **Independent** | Products the seller owns. `streamId` is ignored. |
+
+Not included: random products a seller created inside a stream (these live under `GET /api/v1/seller/streams/:streamId/products`, see §8).
+
+A product that appears on several streams is returned **once**. The list is sorted **newest first** (`createdAt` descending).
+
+---
+
+## 2. Authentication
+
+1. Sign in with `POST /api/v1/auth/login` (`client: "mobile"`) and keep the `accessToken` and the refresh token.
+2. Send `Authorization: Bearer <accessToken>` on every call.
+3. On `401 AUTH_EXPIRED`, call `POST /api/v1/auth/refresh` with the refresh token, then **replay the same request once**. There is no seller-specific refresh endpoint.
+4. A token that does not belong to a seller returns `403 AUTH_ROLE_REQUIRED`.
+
+Full auth details: `MOBILE_AUTH_CONTRACT_V2.md`.
+
+---
+
+## 3. Request
+
+```
+GET /api/v1/seller/products?page=1&pageSize=20&search=&status=&size=&streamId=
+```
+
+All query parameters are optional. Empty values are treated as "not set", so you can always send the full set.
+
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `page` | int ≥ 1 | `1` | 1-based. |
+| `pageSize` | int 1–100 | `20` | Values outside 1–100 return `400 VALIDATION_ERROR`. |
+| `search` | string, max 200 | – | Case-insensitive match anywhere in the product name. |
+| `status` | `AVAILABLE` \| `RESERVED` \| `SOLD` | – | Exact match. Any other value returns `400`. |
+| `size` | string, max 20 | – | A Size Filter bucket (`S`, `M`, `L`, `XL`, …). Use a value from `availableSizes` (§4). Exact match. |
+| `streamId` | string | – | Managed sellers only: only products scanned into that stream. Ignored for independent sellers. |
+
+Filters combine with AND. Filtering is done **on the server**. Do not filter the loaded pages on the device, or the results will be wrong once there is more than one page.
+
+---
+
+## 4. Response
+
+Success is `200` with the standard envelope:
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "string",
+        "name": "string",
+        "status": "AVAILABLE",
+        "isVisible": true,
+        "veilPris": 10,
+        "msrp": 10,
+        "createdAt": "2026-10-24T09:12:00.000Z",
+        "sizeFilter": "M",
+        "images": ["https://…", "https://…"]
+      }
+    ],
+    "page": 1,
+    "pageSize": 20,
+    "total": 42,
+    "availableSizes": ["S", "M", "L", "XL"]
+  },
+  "meta": {}
+}
+```
+
+The values above are illustrative.
+
+### Item fields
+
+| Field | Type | Meaning / UI |
+|---|---|---|
+| `id` | string | Product id. Use it for the detail call (§6). |
+| `name` | string | Product name. Falls back to `"Unavngitt produkt"` when empty. |
+| `status` | `AVAILABLE` \| `RESERVED` \| `SOLD` | Status badge: Tilgjengelig / Reservert / Solgt. |
+| `isVisible` | boolean | `true` → "Synlig" label. |
+| `veilPris` | number \| null | Veil.pris price. |
+| `msrp` | number \| null | **RRP** shown on the card. Show a dash when `null`. |
+| `createdAt` | string (ISO 8601) | Date shown on the card (format `dd.MM.yyyy`). |
+| `sizeFilter` | string \| null | The product's size bucket. `null` when not set. |
+| `images` | string[] | Full HTTPS URLs, catalog photos first, then the seller's size/spec photos. Can be empty. Drives the image carousel ("1 / 3"). |
+
+### Page fields
+
+| Field | Meaning |
+|---|---|
+| `page`, `pageSize` | Echo of the request. |
+| `total` | Number of products matching the **current filters**, across all pages. |
+| `availableSizes` | Size buckets present on the seller's products, in size order (`XXS, XS, S, M, L, XL, XXL, XXXL, XXXXL, OS`, then any other value alphabetically). It **ignores** `search`, `status` and `size`, so the dropdown does not shrink while the user filters. Empty array → hide the size dropdown. |
+
+Prices are numbers in NOK. Format them on the device (for example `10,00 kr`).
+
+---
+
+## 5. How to build the page
+
+**Initial load**
+1. `GET /seller/products?page=1&pageSize=20`.
+2. Render `items` as cards. Fill the size dropdown from `availableSizes` (first option "Alle størrelser" = no `size` param). The status dropdown is fixed: "Alle statuser", Tilgjengelig (`AVAILABLE`), Reservert (`RESERVED`), Solgt (`SOLD`).
+
+**Filtering**
+- Any change to search, status or size → **reset to page 1** and refetch with the new params. Throw away the previously loaded items.
+- Debounce the search box (about 300–400 ms) so you stay within 60 requests/minute.
+- Ignore responses that arrive for an older set of filters (last request wins).
+
+**Paging (infinite scroll)**
+- Load the next page (`page + 1`) when the user nears the end of the list.
+- Stop when `page * pageSize >= total`, or when `items` is empty.
+- If a refetch of page 1 returns data while the user is on page 3, replace the whole list rather than merging pages.
+
+**Card mapping** (matches the web page)
+- Carousel: `images` (counter `i / images.length`). No images → placeholder.
+- Title: `name`. Badge: `status`. Eye label: `isVisible`.
+- "RRP": `msrp`. Date: `createdAt`.
+- **Vis** → open product detail (§6). **Rediger** is disabled on the web page ("Redigering bare for admin"). Mirror that unless product asks for the draft-edit flow (§8).
+
+**Empty states**
+- `items: []` with no filters → "no products yet".
+- `items: []` with filters → "Prøv å endre søkeordet eller fjern filteret."
+
+---
+
+## 6. Related calls
+
+| Need | Call |
+|---|---|
+| Product details page ("Vis") | `GET /api/v1/seller/products/{productId}` |
+| Slim quick-view card | `GET /api/v1/seller/products/{productId}/preview` |
+| Edit history | `GET /api/v1/seller/products/{productId}/edit-logs` |
+
+Detail, preview and edit-logs are allowed for products on any of the seller's product requests (`404` otherwise). The list can include independent sellers' own products; the detail routes above are documented for managed sellers (`MOBILE_SELLER_PRODUCT_EDIT_API.md`).
+
+---
+
+## 7. Errors
+
+Errors use `{ "success": false, "error": { "code": "…", "message": "…" } }`. Full table: `ERROR_CODES.md`.
+
+| HTTP | `code` | When | What to do |
+|---|---|---|---|
+| 400 | `VALIDATION_ERROR` | Bad `page`/`pageSize`/`status`, value too long | Fix the request; do not retry unchanged. |
+| 401 | `AUTH_MISSING_TOKEN` / `AUTH_INVALID_TOKEN` | No or bad bearer token | Sign the user in again. |
+| 401 | `AUTH_EXPIRED` | Access token expired | Refresh once, replay the request. |
+| 403 | `AUTH_ROLE_REQUIRED` | Token is not a seller | Show an error / sign out. |
+| 403 | `AUTH_FORBIDDEN` | Seller account suspended | Show the message. |
+| 404 | `NOT_FOUND` | Seller user no longer exists | Sign the user out. |
+| 429 | `RATE_LIMITED` | More than 60 requests/minute | Wait `Retry-After` seconds (headers `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`), then retry. |
+| 500 | `INTERNAL_ERROR` | Server problem | Show a soft error; retry with backoff. |
+
+A `404` with an HTML or non-JSON body means the app is calling a deployment that does not have this route yet. Check the base URL and the app version of the backend.
+
+---
+
+## 8. Not to be confused with
+
+- `GET /api/v1/seller/streams/:streamId/products` — products of **one stream**, including seller-created random products, with request ids and an `editable` flag. Use it inside a stream (product-request flow), not for the Mine produkter page.
+- Editing: `PATCH /api/v1/seller/products/:productId` is only allowed while the product is on one of the seller's **draft** product requests. See `MOBILE_SELLER_PRODUCT_EDIT_API.md`.
+
+---
+
+## 9. Examples
+
+### cURL
+
+```bash
+curl -s "https://staging.tommesalg.no/api/v1/seller/products?page=1&pageSize=20&status=AVAILABLE&size=M" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+### Dart (models)
+
+```dart
+class SellerProduct {
+  final String id;
+  final String name;
+  final String status; // AVAILABLE | RESERVED | SOLD
+  final bool isVisible;
+  final num? veilPris;
+  final num? msrp; // RRP
+  final DateTime createdAt;
+  final String? sizeFilter;
+  final List<String> images;
+
+  SellerProduct.fromJson(Map<String, dynamic> j)
+      : id = j['id'] as String,
+        name = j['name'] as String,
+        status = j['status'] as String,
+        isVisible = j['isVisible'] as bool,
+        veilPris = j['veilPris'] as num?,
+        msrp = j['msrp'] as num?,
+        createdAt = DateTime.parse(j['createdAt'] as String),
+        sizeFilter = j['sizeFilter'] as String?,
+        images = (j['images'] as List).cast<String>();
+}
+
+class SellerProductPage {
+  final List<SellerProduct> items;
+  final int page, pageSize, total;
+  final List<String> availableSizes;
+
+  SellerProductPage.fromJson(Map<String, dynamic> data)
+      : items = (data['items'] as List)
+            .map((e) => SellerProduct.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        page = data['page'] as int,
+        pageSize = data['pageSize'] as int,
+        total = data['total'] as int,
+        availableSizes = (data['availableSizes'] as List).cast<String>();
+
+  bool get hasMore => page * pageSize < total;
+}
+```
+
+---
+
+## 10. Checklist before release
+
+- [ ] Base URL is correct per environment (staging vs production).
+- [ ] `401 AUTH_EXPIRED` triggers one refresh + replay.
+- [ ] Filters are sent to the server and reset to page 1.
+- [ ] Search is debounced.
+- [ ] Size dropdown is built from `availableSizes` and hidden when empty.
+- [ ] `msrp`, `veilPris` and `sizeFilter` handle `null`; `images` handles an empty list.
+- [ ] `429` is handled with `Retry-After`.
+- [ ] Tested with a **managed** and an **independent** seller account.

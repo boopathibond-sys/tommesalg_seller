@@ -13,6 +13,17 @@ num? _num(dynamic v) {
   return null;
 }
 
+/// Non-blank string, else null.
+String? _text(dynamic v) {
+  if (v is! String) return null;
+  final t = v.trim();
+  return t.isEmpty ? null : t;
+}
+
+List<String> _strings(dynamic v) => v is List
+    ? v.map((e) => e?.toString().trim() ?? '').where((e) => e.isNotEmpty).toList()
+    : const [];
+
 int? _int(dynamic v) {
   if (v is int) return v;
   if (v is num) return v.toInt();
@@ -102,13 +113,18 @@ class AuctionRoomSnapshot {
   /// reachable without a model change.
   final Map<String, dynamic> raw;
 
+  /// [clearActiveAuction] drops the running lot — `activeAuction: null`
+  /// alone means "keep it", like every other field here.
   AuctionRoomSnapshot copyWith({
     StreamSnapshot? stream,
     ActiveAuction? activeAuction,
+    bool clearActiveAuction = false,
   }) =>
       AuctionRoomSnapshot(
         stream: stream ?? this.stream,
-        activeAuction: activeAuction ?? this.activeAuction,
+        activeAuction: clearActiveAuction
+            ? null
+            : (activeAuction ?? this.activeAuction),
         productQueue: productQueue,
         hasProductQueue: hasProductQueue,
         mutedUserIds: mutedUserIds,
@@ -125,15 +141,19 @@ class AuctionRoomSnapshot {
     final active = json['activeAuction'];
     final result = json['lastAuctionResult'];
     final queue = _parseQueue(json);
+    final parsedActive =
+        active is Map<String, dynamic> ? ActiveAuction.fromJson(active) : null;
     return AuctionRoomSnapshot(
       stream: StreamSnapshot.fromJson(
         json['stream'] is Map<String, dynamic>
             ? json['stream'] as Map<String, dynamic>
             : const {},
       ),
-      activeAuction: active is Map<String, dynamic>
-          ? ActiveAuction.fromJson(active)
-          : null,
+      // A lot the server has already closed (it can still ride the snapshot
+      // as `ENDED` while settlement runs) is not a running lot: showing it
+      // left the seller staring at a 0 s clock and a live End button.
+      activeAuction:
+          parsedActive != null && parsedActive.isFinished ? null : parsedActive,
       productQueue: queue ?? const [],
       hasProductQueue: queue != null,
       mutedUserIds:
@@ -170,6 +190,7 @@ class StreamSnapshot {
     this.streamDurationMinutes,
     this.sellerAnnouncement,
     this.effectiveAnnouncement,
+    this.viewerCount,
   });
 
   final String id;
@@ -209,6 +230,11 @@ class StreamSnapshot {
 
   final int? streamDurationMinutes;
 
+  /// Buyers watching right now, when the frame carries a count. Null means
+  /// "not reported on this frame" — not zero — so the room keeps its last
+  /// known figure instead of flashing to 0 on a lightweight frame.
+  final int? viewerCount;
+
   bool get isLive => status == 'LIVE';
   bool get isScheduled => status == 'SCHEDULED';
   bool get isTerminal => status == 'ENDED' || status == 'CANCELLED';
@@ -244,6 +270,7 @@ class StreamSnapshot {
         streamDurationMinutes: streamDurationMinutes,
         sellerAnnouncement: sellerAnnouncement,
         effectiveAnnouncement: effectiveAnnouncement,
+        viewerCount: viewerCount,
       );
 
   factory StreamSnapshot.fromJson(Map<String, dynamic> json) => StreamSnapshot(
@@ -266,7 +293,28 @@ class StreamSnapshot {
         streamDurationMinutes: _int(json['streamDurationMinutes']),
         sellerAnnouncement: _announcementText(json['sellerAnnouncement']),
         effectiveAnnouncement: _announcementText(json['effectiveAnnouncement']),
+        viewerCount: readViewerCount(json),
       );
+
+  /// A viewer count under any of the spellings the API uses for it (the
+  /// buyer app reads the same set), or null when the map has none.
+  static int? readViewerCount(Map<String, dynamic> json) {
+    for (final key in const [
+      'viewerCount',
+      'currentViewerCount',
+      'currentViewers',
+      'viewers',
+      'viewer_count',
+    ]) {
+      final raw = json[key];
+      if (raw is num) return raw.toInt();
+      if (raw is String) {
+        final parsed = int.tryParse(raw);
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
 
   /// An announcement arrives either as a plain string or as an object like
   /// `{ "source": "admin", "message": "…" }` — normalise both to the text, and
@@ -292,6 +340,21 @@ class AuctionProduct {
     this.bidIncrement,
     this.shippingPriceNok,
     this.image,
+    this.images = const [],
+    this.isRandom = false,
+    this.stockCount,
+    this.brand,
+    this.category,
+    this.subCategory,
+    this.mainCategory,
+    this.parentCategory,
+    this.subItem,
+    this.sizesAvailable = const [],
+    this.description,
+    this.bottomPrice,
+    this.remainingDefectQuantity = 0,
+    this.defectDescription,
+    this.upc,
   });
 
   final String productId;
@@ -302,7 +365,7 @@ class AuctionProduct {
   /// Dutch auction opening price ("Dutch pris").
   final num? dutchPrice;
 
-  /// Product's original / retail price ("Originalpris").
+  /// Recommended retail price ("Veil. pris", `veilPris` on the wire).
   final num? originalPrice;
 
   final String auctionType; // NORMAL | DUTCH
@@ -310,7 +373,44 @@ class AuctionProduct {
   final num? shippingPriceNok;
   final String? image;
 
+  /// Every image of the product (absolute URLs), for the quick view gallery.
+  final List<String> images;
+
+  final bool isRandom;
+
+  /// Shared sellable stock (managed products), or the random lot's stock.
+  final int? stockCount;
+
+  final String? brand;
+  final String? category;
+  final String? subCategory;
+
+  /// From `taxonomyPathSnapshot` — e.g. "Menn" › "Yttertøy" › "Briefs".
+  final String? parentCategory;
+  final String? mainCategory;
+  final String? subItem;
+
+  final List<String> sizesAvailable;
+  final String? description;
+  final num? bottomPrice;
+
+  /// Units of this product sold as defective, with the seller's note.
+  final int remainingDefectQuantity;
+  final String? defectDescription;
+
+  /// Barcode. The snapshot doesn't always carry it; the queue catalog does.
+  final String? upc;
+
   bool get isDutch => auctionType == 'DUTCH';
+
+  /// [images] when present, otherwise the single [image].
+  List<String> get gallery {
+    final all = images.where((e) => e.startsWith('http')).toSet().toList();
+    if (all.isEmpty && image != null && image!.startsWith('http')) {
+      return [image!];
+    }
+    return all;
+  }
 
   factory AuctionProduct.fromJson(Map<String, dynamic> json) {
     final product = json['product'];
@@ -319,6 +419,9 @@ class AuctionProduct {
     // The queue item shape is loosely specified and the price for a field may
     // live under a few different keys (or nested under `product`), so probe a
     // small set of candidates defensively.
+    final rawTaxonomy =
+        json['taxonomyPathSnapshot'] ?? json['taxonomy_path_snapshot'];
+    final taxonomy = rawTaxonomy is Map ? rawTaxonomy : const {};
     num? pick(List<String> keys) {
       for (final k in keys) {
         final v = _num(json[k]) ?? _num(productMap[k]);
@@ -336,6 +439,7 @@ class AuctionProduct {
       dutchPrice: pick(
           ['dutchPrice', 'dutchStartingPrice', 'dutchStartPrice', 'dutch_price']),
       originalPrice: pick([
+        'veilPris',
         'originalPrice',
         'original_price',
         'retailPrice',
@@ -347,6 +451,23 @@ class AuctionProduct {
       shippingPriceNok: _num(json['shippingPriceNok']),
       image: (json['image'] ?? productMap['thumbnailUrl'] ?? productMap['image'])
           as String?,
+      images: _strings(json['images'] ?? productMap['images']),
+      isRandom: json['isRandom'] == true,
+      stockCount: _int(json['isRandom'] == true
+          ? (json['randomStock'] ?? json['stockCount'])
+          : json['stockCount']),
+      brand: _text(json['brand'] ?? productMap['brand']),
+      category: _text(json['category']),
+      subCategory: _text(json['subCategory'] ?? json['sub_category']),
+      parentCategory: _text(taxonomy['parent_category']),
+      mainCategory: _text(taxonomy['main_category']),
+      subItem: _text(taxonomy['sub_item']),
+      sizesAvailable: _strings(json['sizesAvailable']),
+      description: _text(json['description'] ?? productMap['description']),
+      bottomPrice: _num(json['bottomPrice']),
+      remainingDefectQuantity: _int(json['remainingDefectQuantity']) ?? 0,
+      defectDescription: _text(json['defectDescription']),
+      upc: _text(json['upc'] ?? json['gtin'] ?? productMap['upc']),
     );
   }
 }
@@ -360,6 +481,7 @@ class ActiveAuction {
     this.title,
     this.image,
     this.auctionType = 'NORMAL',
+    this.status,
     this.startedAt,
     this.endsAt,
     this.startingPrice,
@@ -376,6 +498,10 @@ class ActiveAuction {
   final String? title;
   final String? image;
   final String auctionType;
+
+  /// Server lifecycle status, upper-cased (`ACTIVE`, `ENDED`, …). Null when
+  /// the payload doesn't say, which reads as running.
+  final String? status;
   final String? startedAt;
   final String? endsAt;
   final num? startingPrice;
@@ -393,6 +519,45 @@ class ActiveAuction {
   final Map<String, dynamic> raw;
 
   bool get isDutch => auctionType == 'DUTCH';
+
+  static const _finishedStatuses = {
+    'ENDED',
+    'SOLD',
+    'UNSOLD',
+    'SETTLED',
+    'SETTLING',
+    'COMPLETED',
+    'CLOSED',
+    'CANCELLED',
+    'CANCELED',
+    'EXPIRED',
+    'PASSED',
+  };
+
+  /// True once the server has closed this lot.
+  bool get isFinished => status != null && _finishedStatuses.contains(status);
+
+  /// Every id the payload names this lot by. The room snapshot has shipped it
+  /// as `auctionId`, `id` and `productAuctionId`, while WS events always say
+  /// `auctionId` — matching on one key alone dropped every bid whenever the
+  /// two disagreed.
+  ///
+  /// The product id is never one of them: the same (random) product can run
+  /// again as the next lot, and must not be mistaken for the one that ended.
+  Set<String> get knownIds => {
+        if (id != null) id!,
+        for (final k in const ['auctionId', 'id', 'productAuctionId'])
+          if (raw[k] is String && (raw[k] as String).isNotEmpty)
+            raw[k] as String,
+      }..remove(productId);
+
+  /// Whether an event naming [otherId] is about this lot. An event (or a lot)
+  /// that names no id at all is taken as being about the running one.
+  bool isSameLot(String? otherId) {
+    if (otherId == null) return true;
+    final ids = knownIds;
+    return ids.isEmpty || ids.contains(otherId);
+  }
 
   /// The shipping figure worth showing, or null when there is none.
   num? get shippingPrice {
@@ -431,6 +596,7 @@ class ActiveAuction {
     int? bidCount,
     num? shippingPriceNok,
     String? winnerName,
+    String? endsAt,
   }) =>
       ActiveAuction(
         id: id,
@@ -438,8 +604,9 @@ class ActiveAuction {
         title: title ?? this.title,
         image: image ?? this.image,
         auctionType: auctionType,
+        status: status,
         startedAt: startedAt,
-        endsAt: endsAt,
+        endsAt: endsAt ?? this.endsAt,
         startingPrice: startingPrice ?? this.startingPrice,
         currentPrice: currentPrice ?? this.currentPrice,
         highestBid: highestBid ?? this.highestBid,
@@ -461,13 +628,16 @@ class ActiveAuction {
         winner is Map<String, dynamic> ? winner : const <String, dynamic>{};
 
     return ActiveAuction(
-      id: (json['id'] ?? json['auctionId']) as String?,
+      // `auctionId` first: it is the key every WS event (`BID_PLACED`,
+      // `AUCTION_ENDED`) names the lot by, so it is what bids are matched on.
+      id: (json['auctionId'] ?? json['id']) as String?,
       productId: (json['productId'] ?? productMap['id']) as String?,
       title: (json['title'] ?? productMap['title'] ?? productMap['name'])
           as String?,
       image: (json['image'] ?? productMap['image'] ?? productMap['thumbnailUrl'])
           as String?,
       auctionType: (json['auctionType'] ?? 'NORMAL') as String,
+      status: (json['status'] as String?)?.toUpperCase(),
       startedAt: json['startedAt'] as String?,
       endsAt: (json['endsAt'] ?? json['endTime']) as String?,
       startingPrice: _num(json['startingPrice']),
@@ -498,13 +668,21 @@ class ActiveAuction {
   /// Null when the payload gives us neither.
   int? get totalDurationSec {
     final declared = _int(raw['durationSec'] ?? raw['durationSeconds']);
-    if (declared != null && declared > 0) return declared;
 
     final start = startedAtUtc;
     final end = endsAtUtc;
-    if (start == null || end == null) return null;
-    final ms = end.difference(start).inMilliseconds;
-    return ms <= 0 ? null : (ms / 1000).round();
+    final ms = start == null || end == null
+        ? 0
+        : end.difference(start).inMilliseconds;
+    final scheduled = ms <= 0 ? null : (ms / 1000).round();
+
+    // A late bid extends `endsAt` (anti-snipe), so the declared duration can
+    // be shorter than the lot now runs. Capping the countdown at it would hide
+    // the extension.
+    if (declared != null && declared > 0) {
+      return scheduled != null && scheduled > declared ? scheduled : declared;
+    }
+    return scheduled;
   }
 }
 

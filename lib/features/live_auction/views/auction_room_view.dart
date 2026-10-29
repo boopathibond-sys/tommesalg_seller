@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/services/media_permission_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -33,6 +34,11 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The seller is broadcasting hands-free (phone on a stand), so the OS
+    // auto-lock must never blank the screen and cut the stream mid-auction.
+    // Held for as long as the room is open — screens pushed on top of it
+    // (Media Push, sheets) are covered too.
+    WakelockPlus.enable();
     ctrl = Get.put(
       AuctionRoomController(streamId: widget.streamId),
       tag: widget.streamId,
@@ -62,7 +68,15 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state != AppLifecycleState.resumed) return;
-    if (!ctrl.permissionDenied.value) return;
+    // Some OEM Android builds drop the keep-screen-on flag while the app is
+    // in the background — take it again on the way back.
+    WakelockPlus.enable();
+    if (!ctrl.permissionDenied.value) {
+      // The OS suspends the auction socket in the background: without this
+      // the room came back deaf — no bids, no lot close — until it noticed.
+      if (!ctrl.isBootstrapping.value) ctrl.reconnectRealtime();
+      return;
+    }
     MediaPermissionService.hasCameraAndMic().then((granted) {
       if (granted && mounted && ctrl.permissionDenied.value) ctrl.enterRoom();
     });
@@ -71,6 +85,8 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Back to the normal auto-lock once the seller leaves the room.
+    WakelockPlus.disable();
     _extendPromptWorker.dispose();
     Get.delete<AuctionRoomController>(tag: widget.streamId);
     super.dispose();
@@ -86,9 +102,9 @@ class _AuctionRoomViewState extends State<AuctionRoomView>
             fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
         // A watcher has no broadcast to stop — telling it that one will stop
         // reads as "leaving will take the stream down", which is the opposite
-        // of what happens.
+        // of what happens. Only the main device broadcasts.
         content: CustomText(
-          ctrl.isController
+          ctrl.isPrimaryDevice && !ctrl.watching.value
               ? TKeys.arLeaveBodyBroadcast.tr
               : TKeys.arLeaveBodyWatching.tr,
           fontSize: 14, fontWeight: FontWeight.w500, height: 1.4,

@@ -11,7 +11,7 @@ import '../../controllers/auth_controller.dart';
 import '../../controllers/dashboard_controller.dart';
 import '../../controllers/inventory_controller.dart';
 import '../../controllers/notification_controller.dart';
-import '../../controllers/products_nav_controller.dart';
+// import '../../controllers/products_nav_controller.dart';
 import '../../controllers/profile_controller.dart';
 import '../../controllers/stock_nav_controller.dart';
 import '../../controllers/stream_controller.dart';
@@ -25,6 +25,7 @@ import '../../core/widgets/branded_refresh_indicator.dart';
 import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/custom_text.dart';
 import '../../core/widgets/image_pick_crop.dart';
+import '../../features/notifications/application/notification_router.dart';
 import '../../models/seller_dashboard.dart';
 import '../../models/seller_profile.dart';
 import '../auth/login_view.dart';
@@ -37,6 +38,8 @@ import '../profile/edit_profile_view.dart';
 import '../stock/stock_view.dart';
 import '../stream/create_stream_view.dart';
 import '../stream/stream_list_view.dart';
+import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
+import '../../core/utils/currency.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -64,8 +67,11 @@ class _HomeViewState extends State<HomeView> {
   static const _tabs = <_TabSpec>[
     _TabSpec(icon: Icons.home_rounded,        labelKey: TKeys.navHome),
     _TabSpec(icon: Icons.connected_tv_outlined,     labelKey: TKeys.navStreams),
-    _TabSpec(icon: Icons.live_tv_outlined, labelKey: TKeys.navProducts),
-    _TabSpec(icon: Icons.inventory_2_rounded, labelKey: TKeys.navStock),
+    // Center tab: the "Assign to live" screen (product requests for a stream).
+    _TabSpec(icon: Icons.live_tv_outlined,    labelKey: TKeys.navRequests),
+    // Products is now just the seller's own catalog ("My Products").
+    _TabSpec(icon: Icons.shopping_bag_outlined,   labelKey: TKeys.navProducts),
+    // _TabSpec(icon: Icons.inventory_2_rounded, labelKey: TKeys.navStock),
     _TabSpec(icon: Icons.person_rounded,      labelKey: TKeys.navProfile),
   ];
 
@@ -74,6 +80,22 @@ class _HomeViewState extends State<HomeView> {
     super.initState();
     // Badge only — the inbox itself loads its rows when it opens.
     _notificationCtrl.fetchUnreadCount();
+    // After the first frame, so the route that pushed Home has settled and a
+    // replayed cold-start tap lands on top of Home rather than being replaced.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      NotificationRouter.attachHome(
+        owner: this,
+        navigator: Navigator.of(context),
+        showStreams: _goToStreams,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    NotificationRouter.detachHome(this);
+    super.dispose();
   }
 
   // Future<void> _openScanner() async {
@@ -99,13 +121,13 @@ class _HomeViewState extends State<HomeView> {
     setState(() => _index = 3);
   }
 
-  /// Home "See products" quick action — opens the Products tab already showing
-  /// its "My Products" segment.
+  /// Home "See products" quick action — opens the Products tab, which is
+  /// "My Products" on its own now.
   void _goToMyProducts() {
-    getOrPut(() => ProductsNavController()).goToMyProducts();
-    // Same reload the bottom-nav Products tab does.
-    _streamListCtrl.fetchStreamsByStatus(status: 'SCHEDULED');
-    setState(() => _index = 2);
+    // getOrPut(() => ProductsNavController()).goToMyProducts();
+    // // Same reload the bottom-nav Products tab does.
+    // _streamListCtrl.fetchStreamsByStatus();
+    setState(() => _index = 3);
   }
 
   /// Home "Configure streams" quick action — switches to the Streams tab.
@@ -200,8 +222,10 @@ class _HomeViewState extends State<HomeView> {
                 onConfigureStreams: _goToStreams,
               ),
               const StreamListView(),
-              const ManageProductView(),
-              const StockView(),
+              // const ManageProductView(),
+              const ManageProductView(section: ProductsSection.assignToLive),
+              const ManageProductView(section: ProductsSection.myProducts),
+              // const StockView(),
               _ProfileTab(profileCtrl: _profileCtrl),
             ],
                     ),
@@ -219,25 +243,27 @@ class _HomeViewState extends State<HomeView> {
               // Streams tab: reload from the API every time it's opened.
               _streamListCtrl.fetchStreams(refresh: true);
             }else if(i==2){
-              // Products tab → "Assign to live": re-sync the scheduled streams
+              // Requests tab → "Assign to live": re-sync the scheduled streams
               // in the background on every tap, so a stream created or edited
               // elsewhere shows up in the dropdown. Silent on purpose — no
               // spinner over the list the seller is looking at, and a failed
               // sync leaves the last good data in place rather than throwing
               // an error state at them.
               unawaited(_streamListCtrl.fetchStreamsByStatus(
-                status: 'SCHEDULED',
                 refresh: true,
                 silent: true,
               ));
-            }else if(i==3){
+            }
+            // Stock tab is hidden — index 3 is Products now, so its stats
+            // reload is parked with it.
+            /* else if(i==3){
               // Stock tab: (re)load the warehouse overview stats every time
               // it's opened. Inside the IndexedStack the controller's onInit
               // fires only once at startup, so this retries an earlier
               // failed/missing call. getOrPut returns the same
               // InventoryController the Stock section is already observing.
               getOrPut(() => InventoryController()).fetchStats();
-            }
+            } */
             setState(() => _index = i);
           },
         ),
@@ -1076,33 +1102,35 @@ class _QuickActions extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _QuickActionCard(
-                    icon: Icons.add_business_rounded,
-                    tone: _Tone.green,
-                    title: TKeys.createNewSku.tr,
-                    subtitle: TKeys.createNewSkuSub.tr,
-                    onTap: onCreateSku,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _QuickActionCard(
-                    icon: Icons.edit_location_alt_rounded,
-                    tone: _Tone.amber,
-                    title: TKeys.editExistingSku.tr,
-                    subtitle: TKeys.editExistingSkuSub.tr,
-                    onTap: onEditSku,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // SKU quick actions (Create new SKU / Edit existing SKU) — hidden for
+          // now, kept for when the SKU flow comes back.
+          // const SizedBox(height: 12),
+          // IntrinsicHeight(
+          //   child: Row(
+          //     crossAxisAlignment: CrossAxisAlignment.stretch,
+          //     children: [
+          //       Expanded(
+          //         child: _QuickActionCard(
+          //           icon: Icons.add_business_rounded,
+          //           tone: _Tone.green,
+          //           title: TKeys.createNewSku.tr,
+          //           subtitle: TKeys.createNewSkuSub.tr,
+          //           onTap: onCreateSku,
+          //         ),
+          //       ),
+          //       const SizedBox(width: 12),
+          //       Expanded(
+          //         child: _QuickActionCard(
+          //           icon: Icons.edit_location_alt_rounded,
+          //           tone: _Tone.amber,
+          //           title: TKeys.editExistingSku.tr,
+          //           subtitle: TKeys.editExistingSkuSub.tr,
+          //           onTap: onEditSku,
+          //         ),
+          //       ),
+          //     ],
+          //   ),
+          // ),
           const SizedBox(height: 12),
           // Orders — full width under the SKU pair, since it opens its own
           // screen rather than jumping to a bottom-nav tab.
@@ -1422,18 +1450,7 @@ class _DashboardSection extends StatelessWidget {
   }
 }
 
-/// `2810.41` → `2 810 kr`. Rounded to whole kroner with space-separated
-/// thousands, matching the web dashboard's turnover card.
-String _formatMoney(double value) {
-  final rounded = value.round();
-  final digits = rounded.abs().toString();
-  final buffer = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(' ');
-    buffer.write(digits[i]);
-  }
-  return '${rounded < 0 ? '-' : ''}$buffer kr';
-}
+String _formatMoney(double value) => formatNok(value);
 
 /// Loading / error / empty stand-in for the dashboard cards. Keeps the section
 /// header (and its month menu) on screen while the body sorts itself out.
@@ -2555,9 +2572,9 @@ Future<void> _pickAndUploadImage(
 
   final ok = await ctrl.uploadProfileImage(kind: kind, filePath: path);
   if (ok) {
-    Get.snackbar(TKeys.updatedTitle.tr, TKeys.imageUploaded.tr);
+    AppSnackbar.show(TKeys.updatedTitle.tr, TKeys.imageUploaded.tr);
   } else {
-    Get.snackbar(TKeys.errorTitle.tr, ctrl.errorMessage ?? TKeys.couldNotUploadImage.tr);
+    AppSnackbar.show(TKeys.errorTitle.tr, ctrl.errorMessage ?? TKeys.couldNotUploadImage.tr);
   }
 }
 
@@ -3220,7 +3237,7 @@ Future<void> _showLanguageSheet(BuildContext context) async {
   await lang.changeLanguage(picked);
   // Resolved after the switch, so the confirmation itself is already in the
   // language the seller just picked.
-  Get.snackbar(
+  AppSnackbar.show(
     TKeys.languageChanged.tr,
     picked.languageCode == 'nb'
         ? TKeys.languageNorwegian.tr
@@ -3343,7 +3360,7 @@ Future<void> _openLegalUrl(String url) async {
     launched = false;
   }
   if (launched) return;
-  Get.snackbar(TKeys.legalOpenFailedTitle.tr, TKeys.legalOpenFailed.tr);
+  AppSnackbar.show(TKeys.legalOpenFailedTitle.tr, TKeys.legalOpenFailed.tr);
 }
 
 /// **Slett konto** — the in-app entry point to account deletion.
@@ -3402,7 +3419,7 @@ class _DeleteAccountButtonState extends State<_DeleteAccountButton> {
     setState(() => _busy = false);
     if (launched) return;
 
-    Get.snackbar(TKeys.accountDelete.tr, TKeys.accountDeleteFailed.tr);
+    AppSnackbar.show(TKeys.accountDelete.tr, TKeys.accountDeleteFailed.tr);
   }
 
   @override

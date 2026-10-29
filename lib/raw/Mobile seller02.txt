@@ -1,0 +1,95 @@
+# Mobile seller — product edit & stream product list (API v1)
+
+Audience: mobile developers. Base path `/api/v1`, bearer token, role `seller`, **managed sellers only** (independent sellers get `403`). Responses use the standard envelope `{ success, data, meta }` / `{ success:false, error:{ code, message } }` (see `ERROR_CODES.md`).
+
+## 1. What changed (important)
+
+Sellers are **no longer assigned products**. `products.assigned_sellers` is not consulted anywhere in this flow.
+
+| Before | Now |
+|---|---|
+| Edit allowed if the seller is in `assigned_sellers` | Edit allowed only if the product is a **line on the seller's own `draft` stream product request** |
+| "Mine produkter" = assigned catalog (`GET /seller/products`) | "Mine produkter" = products scanned into the seller's own requests: `GET /seller/products` (restored 2026-10-28, see `MOBILE_SELLER_PRODUCTS_LIST_API.md`). Per-stream list: `GET /seller/streams/:streamId/products` |
+| Assignment happened on submit | Not needed |
+
+Rules:
+- **Scan** a product into a stream's draft request (`POST /seller/streams/:streamId/product-requests/scan`) → the product is now editable and appears in that stream's product list.
+- **Edit** (`PATCH`) is allowed while that request is `draft`. After the request is submitted, edit returns `403`; the product stays viewable.
+- **Edit reason is mandatory** (`editReason`); every changed field is written to the edit log.
+- **View** (detail, edit logs) is allowed for any product on any of the seller's requests, whatever the request status. No line → `404`.
+
+The web seller app follows the same rules (edit page, detail page, product list).
+
+## 2. Endpoints
+
+### 2.1 Stream product list — `GET /seller/streams/:streamId/products`
+Products of one stream, including seller-created products. (The all-products page uses `GET /seller/products`, see `MOBILE_SELLER_PRODUCTS_LIST_API.md`.) Stream must belong to the seller (`404` otherwise).
+
+Query: `page` (default 1), `pageSize` (default 20, max 100), `search` (name), `status` (`AVAILABLE|RESERVED|SOLD`).
+
+```json
+{ "items": [{
+    "id": "…", "name": "…", "status": "AVAILABLE", "isVisible": true,
+    "veilPris": 499, "buyNowPrice": null, "createdAt": "…", "images": ["https://…"],
+    "source": "scanned",            // "scanned" = product request line, "created" = seller-created random product
+    "requestId": "…", "requestItemId": "…", "requestStatus": "draft",
+    "quantityRequested": 2,
+    "editable": true                // scanned line on a draft request → show the Edit button
+}], "page": 1, "pageSize": 20, "total": 7 }
+```
+`source: "created"` items have null request fields and `editable: false` (managed through `/seller/streams/:streamId/random-products`). Scanned lines come first (request order), then created products.
+
+### 2.2 Detail — `GET /seller/products/:productId`
+Returns `{ product, platformShippingSettings }`. `product` has all editable fields (name, descriptions, features, materialsAndCare, brand, tags, prices `veilPris/startingPrice/bottomPrice/buyNowPrice/msrp`, `stockCount`, `sku`, `upc`, `weight`, `material`, `colour`, `sizesAvailable`, `size`, `taxonomyNodeId`, `shippingPriceNok`, `shippingOverrideEnabled`, HTTPS `images`, …). `platformShippingSettings`: `defaultShippingPriceNok`, `maxShippingPerProductNok`, `allowSellerOverride`, `allowedShippingAmountsNok` (`[79,99,129,169,249]`).
+Errors: `404` product not on any of the seller's requests.
+
+### 2.3 Edit — `PATCH /seller/products/:productId`
+Body (strict — unknown keys → `400`; send only changed fields):
+
+| Field | Type | Notes |
+|---|---|---|
+| `editReason` | string 1–2000 | **required** |
+| `name`, `shortDescription`, `description`, `brand`, `material`, `colour`, `features`, `materialsAndCare`, `sku`, `upc` | string | |
+| `veilPris`, `weight` | number \| string | |
+| `startingPrice`, `bottomPrice` | number \| string | each ≥ Stripe minimum (error message states it) |
+| `tags` | string[] \| comma string | |
+| `size`, `usSize`, `euSize`, `sizesAvailable` | string | `sizeType` is accepted but not persisted |
+| `stockCount` | int | |
+| `taxonomyNodeId` | string \| null | category node; derived stream categories are rebuilt |
+| `imageUrls` + `replaceImages: true` | string[] | replaces the gallery |
+| `useDefaultShipping` | boolean | resets to platform default |
+| `shippingPriceNok` | number | must be one of `allowedShippingAmountsNok` |
+
+`200` → `{ "ok": true, "productId": "…" }`.
+
+| Status | Meaning |
+|---|---|
+| 400 | missing/invalid `editReason`, price below minimum, bad shipping amount, unknown field |
+| 403 | product is only on submitted/fulfilled requests (edit locked) or not a managed seller |
+| 404 | product not on any of the seller's requests |
+
+### 2.4 Edit history — `GET /seller/products/:productId/edit-logs`
+`{ items: [{ id, productId, editedBy, editorDisplayName, field, oldValue, newValue, reason, createdAt }] }` (latest 200). Same access as detail.
+
+### 2.5 Unchanged helpers (same request-line access)
+`PUT/POST …/products/:id/size-spec-images`, `…/defects`, `…/shipping`, `GET …/preview`, `GET …/measurement-bundle`; scan: `POST /seller/streams/:streamId/product-requests/scan` (+ `/scan/unknown`); request detail: `GET /seller/streams/:streamId/product-requests`.
+
+## 3. Web ↔ mobile parity
+
+| Capability | Web | Mobile v1 |
+|---|---|---|
+| Scan product into stream request | Product requests page | `…/product-requests/scan` |
+| Open edit from a request line | pencil icon → `/seller/products/:id/edit` | `GET detail` → `PATCH` |
+| Edit fields + mandatory reason | `updateProductAction` | `PATCH /seller/products/:id` (same service) |
+| Edit log | Product log tab | `…/edit-logs` |
+| Product list of a stream | `/seller/products?streamId=` | `…/streams/:streamId/products` |
+| All products page (scanned; independents: owned) | `/seller/products` | `GET /seller/products` (optional `streamId`) |
+| Size/spec images, defects, shipping | request quick view | dedicated endpoints (2.5) |
+
+Web and mobile share one service (`updateSellerAssignedProduct`) and one access check, so rules cannot drift.
+
+## 4. Suggested mobile flow
+1. Scan → `POST …/product-requests/scan` (`action: created | incremented`).
+2. Stream product list → `GET …/streams/:streamId/products`; show Edit only when `editable`.
+3. Edit screen → `GET /seller/products/:id`, user changes fields and enters a reason → `PATCH`.
+4. On `403` after submit, show a "locked after submit" message; offer read-only detail.
