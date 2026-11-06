@@ -15,6 +15,7 @@ class SendToLiveResult {
     this.products = 0,
     this.unknown = 0,
     this.notQueued = 0,
+    this.heldIssues = 0,
     this.error,
   });
 
@@ -24,6 +25,7 @@ class SendToLiveResult {
         products = 0,
         unknown = 0,
         notQueued = 0,
+        heldIssues = 0,
         error = message;
 
   final bool ok;
@@ -42,8 +44,44 @@ class SendToLiveResult {
   /// checked.
   final int notQueued;
 
+  /// Known lines kept in draft because of an open seller issue (TW-193
+  /// `heldIssueCount`). They go to the auction on their own once the admin
+  /// resolves the issue.
+  final int heldIssues;
+
   /// Server-supplied failure message, when [ok] is false.
   final String? error;
+
+  /// Builds the result from the server's TW-193 `data.submitSummary`
+  /// (`queuedCount`, `heldIssueCount`, `pendingUnknownCount`,
+  /// `enqueueFailedCount`). Null when the summary is absent (older server),
+  /// so the caller falls back to [summarize]. [units] is still counted from
+  /// the lines that were actually queued, since the summary counts products.
+  static SendToLiveResult? fromSubmitSummary(
+    Object? summary,
+    List<ProductRequestItem> sent,
+  ) {
+    if (summary is! Map) return null;
+    int n(String key) {
+      final v = summary[key];
+      return v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
+    }
+
+    var units = 0;
+    for (final item in sent) {
+      if (item.isHeld || item.isUnknownUpc) continue;
+      final qty = item.unsentQuantity;
+      if (qty > 0) units += qty;
+    }
+    return SendToLiveResult(
+      ok: true,
+      units: units,
+      products: n('queuedCount'),
+      unknown: n('pendingUnknownCount'),
+      heldIssues: n('heldIssueCount'),
+      notQueued: n('enqueueFailedCount'),
+    );
+  }
 
   /// Counts what [sent] (the unsent lines at the moment of submit) amounted
   /// to, and — given the queue [catalog] read afterwards — which known
@@ -55,12 +93,16 @@ class SendToLiveResult {
   }) {
     var units = 0;
     var unknown = 0;
+    var heldIssues = 0;
     final productIds = <String>{};
     for (final item in sent) {
       final qty = item.unsentQuantity;
       if (qty <= 0) continue;
       if (item.isUnknownUpc || item.productId.isEmpty) {
         unknown++;
+      } else if (item.effectiveHoldReason ==
+          ProductRequestItem.holdOpenIssue) {
+        heldIssues++;
       } else {
         units += qty;
         productIds.add(item.productId);
@@ -81,6 +123,7 @@ class SendToLiveResult {
       units: units,
       products: productIds.length,
       unknown: unknown,
+      heldIssues: heldIssues,
       notQueued: notQueued,
     );
   }

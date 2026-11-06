@@ -235,30 +235,30 @@ class MediaPushPlatform {
   // Getter, not a stored field: `.tr` must re-resolve when the seller
   // switches language, and a field initialiser only ever runs once.
   static List<MediaPushPlatform> get all => [
-    const MediaPushPlatform(
+    MediaPushPlatform(
       id: 'youtube',
       label: 'YouTube',
       defaultRtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
       requiresKey: true,
-      keyHint: 'From YouTube Studio → Go live → Stream key',
+      keyHint: TKeys.mpKeyHintYoutube.tr,
     ),
-    const MediaPushPlatform(
+    MediaPushPlatform(
       id: 'tiktok',
       label: 'TikTok',
-      keyHint: 'From TikTok LIVE Studio → Stream key',
+      keyHint: TKeys.mpKeyHintTiktok.tr,
     ),
-    const MediaPushPlatform(
+    MediaPushPlatform(
       id: 'facebook',
       label: 'Facebook',
       defaultRtmpUrl: 'rtmps://live-api-s.facebook.com:443/rtmp/',
       needsPublisher: true,
-      keyHint: 'From Facebook Live producer → Stream key',
+      keyHint: TKeys.mpKeyHintFacebook.tr,
     ),
-    const MediaPushPlatform(
+    MediaPushPlatform(
       id: 'instagram',
       label: 'Instagram',
       needsPublisher: true,
-      keyHint: 'From the Instagram live producer tool',
+      keyHint: TKeys.mpKeyHintInstagram.tr,
     ),
     MediaPushPlatform(id: 'custom', label: TKeys.mpCustomRtmp.tr),
   ];
@@ -284,14 +284,14 @@ String? validateMediaPushDestination({
   final rtmpPattern = RegExp(r'^rtmps?://', caseSensitive: false);
 
   if (!platforms.contains(platform)) {
-    return 'Platform must be TikTok, Facebook, Instagram, YouTube or custom.';
+    return TKeys.mpErrPlatform.tr;
   }
-  if (rtmpUrl.trim().isEmpty) return 'RTMP URL is required.';
+  if (rtmpUrl.trim().isEmpty) return TKeys.mpErrRtmpRequired.tr;
   if (!rtmpPattern.hasMatch(rtmpUrl.trim())) {
     return 'RTMP URL must start with rtmp:// or rtmps://';
   }
   if (platform == 'youtube' && (streamKey == null || streamKey.trim().isEmpty)) {
-    return 'YouTube requires a stream key.';
+    return TKeys.mpErrYoutubeKey.tr;
   }
   return null;
 }

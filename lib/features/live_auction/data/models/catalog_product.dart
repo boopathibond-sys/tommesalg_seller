@@ -1,3 +1,7 @@
+import 'package:get/get.dart';
+
+import '../../../../core/localization/translation_keys.dart';
+
 /// An item from `GET /auction-room/queue/catalog` — a product the seller can
 /// add to the queue. `inQueue` flags the ones already lined up.
 class CatalogProduct {
@@ -54,7 +58,7 @@ class CatalogProduct {
 
   factory CatalogProduct.fromJson(Map<String, dynamic> json) => CatalogProduct(
         productId: (json['productId'] ?? '') as String,
-        name: (json['name'] ?? 'Product') as String,
+        name: (json['name'] ?? TKeys.productFallback.tr) as String,
         upc: json['upc'] as String?,
         type: (json['type'] ?? 'USUAL') as String,
         inQueue: json['inQueue'] as bool? ?? false,

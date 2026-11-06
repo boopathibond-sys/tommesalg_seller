@@ -753,7 +753,7 @@ class _NewTagForm extends StatelessWidget {
                 child: _Field(
                   label: 'LABEL',
                   controller: labelCtrl,
-                  hint: 'e.g. Jackets',
+                  hint: TKeys.stTagLabelHint.tr,
                   filled: false,
                   onChanged: onLabelChanged,
                 ),
@@ -800,7 +800,7 @@ class _NewTagForm extends StatelessWidget {
                           size: 16, color: AppColors.brandNavy),
                     const SizedBox(width: 6),
                     const CustomText(
-                      'Add SKU tag',
+                      TKeys.stAddSkuTag.tr,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.3,

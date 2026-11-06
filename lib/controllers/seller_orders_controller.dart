@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
+import '../core/localization/translation_keys.dart';
 
 import 'package:get/get.dart';
 
@@ -226,13 +227,13 @@ class SellerOrdersController extends GetxController {
       if (seq != _fetchSeq) return false;
 
       if (!response.isSuccess) {
-        _error.value = 'Could not load orders (${response.statusCode}).';
+        _error.value = TKeys.errLoadOrders.trParams({'code': '${response.statusCode}'});
         return false;
       }
 
       final body = response.json;
       if (body['success'] != true || body['data'] is! Map) {
-        _error.value = 'Unexpected response format.';
+        _error.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
@@ -265,7 +266,7 @@ class SellerOrdersController extends GetxController {
       return true;
     } catch (e) {
       log('Orders fetch error: $e');
-      if (seq == _fetchSeq) _error.value = 'Network error. Please try again.';
+      if (seq == _fetchSeq) _error.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       // A superseded request must not clear the flags under the newer one.

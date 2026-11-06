@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:developer';
+import '../core/localization/translation_keys.dart';
 
 import 'package:get/get.dart';
 
@@ -33,14 +35,40 @@ class DashboardController extends GetxController {
   /// The month currently displayed, `YYYY-MM`. Null until the first load, when
   /// the API tells us which month it defaulted to.
   final RxnString _selectedMonth = RxnString();
-  String? get selectedMonth => _selectedMonth.value ?? _dashboard.value?.yearMonth;
+  String? get selectedMonth =>
+      _selectedMonth.value ?? _dashboard.value?.yearMonth;
 
-  List<String> get availableMonths => _dashboard.value?.availableMonths ?? const [];
+  List<String> get availableMonths =>
+      _dashboard.value?.availableMonths ?? const [];
+
+  /// Bumped per [fetchDashboard] call so an older response that lands late
+  /// (e.g. a background refresh racing a month switch) can't overwrite newer
+  /// numbers.
+  int _fetchSeq = 0;
+
+  Timer? _refreshDebounce;
 
   @override
   void onInit() {
     super.onInit();
     fetchDashboard();
+  }
+
+  @override
+  void onClose() {
+    _refreshDebounce?.cancel();
+    super.onClose();
+  }
+
+  /// Background re-sync after something the cards count has changed elsewhere
+  /// in the app (a stream created, rescheduled, deleted, gone live or ended).
+  /// Debounced so a burst of changes costs one request, and silent so the
+  /// cards just update in place.
+  void refreshSoon() {
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(milliseconds: 400), () {
+      fetchDashboard(silent: true);
+    });
   }
 
   /// Loads the dashboard for [month] (`YYYY-MM`), or the API's default month
@@ -60,6 +88,7 @@ class DashboardController extends GetxController {
       }
     }
     _errorMessage.value = null;
+    final seq = ++_fetchSeq;
 
     try {
       var uri = Uri.parse('${EnvConfig.baseUrl}/api/v1/seller/dashboard');
@@ -72,8 +101,10 @@ class DashboardController extends GetxController {
         headers: AuthService.instance.authHeaders,
       );
 
-      if (response.isSuccess) {
+      // Superseded by a newer fetch — its result is the one to show.
+      if (seq != _fetchSeq) return false;
 
+      if (response.isSuccess) {
         final body = response.json;
         if (body['success'] == true && body['data'] is Map) {
           final data = SellerDashboard.fromJson(
@@ -84,24 +115,27 @@ class DashboardController extends GetxController {
           if (data.yearMonth.isNotEmpty) _selectedMonth.value = data.yearMonth;
           return true;
         }
-        _errorMessage.value = 'Unexpected response format.';
+        _errorMessage.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
       if (response.statusCode == 403) {
-        _errorMessage.value = "You don't have access to the dashboard.";
+        _errorMessage.value = TKeys.errNoDashboardAccess.tr;
         return false;
       }
 
-      _errorMessage.value = 'Failed to load dashboard: ${response.statusCode}';
+      _errorMessage.value =
+          TKeys.errLoadDashboard.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Dashboard fetch error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      if (seq == _fetchSeq) _errorMessage.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
-      _isLoading.value = false;
-      _isSwitchingMonth.value = false;
+      if (seq == _fetchSeq) {
+        _isLoading.value = false;
+        _isSwitchingMonth.value = false;
+      }
     }
   }
 

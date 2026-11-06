@@ -67,12 +67,11 @@ class MediaPushController extends GetxController {
   /// Why Start is disabled, in the same order (and words) the web console uses.
   /// Null means it can run.
   String? get startDisabledReason {
-    if (!isLive) return 'Stream must be LIVE';
-    if (!isPrimary) return 'Only the PRIMARY device can start Media Push';
-    if (destinations.isEmpty) return 'Add at least one destination';
+    if (!isLive) return TKeys.mpErrMustBeLive.tr;
+    if (!isPrimary) return TKeys.mpErrPrimaryStart.tr;
+    if (destinations.isEmpty) return TKeys.mpErrAddDestination.tr;
     if (!publisherDetected) {
-      return 'Publisher not detected yet — start your camera on the Live tab, '
-          'then retry';
+      return TKeys.mpErrNoPublisher.tr;
     }
     return null;
   }
@@ -146,7 +145,7 @@ class MediaPushController extends GetxController {
       log('Media push load failed: $e', name: 'MediaPush');
     } catch (e) {
       if (config.value == null) {
-        loadError.value = 'Network error. Please try again.';
+        loadError.value = TKeys.svcNetworkError.tr;
       }
       log('Media push load error: $e', name: 'MediaPush');
     } finally {
@@ -189,8 +188,8 @@ class MediaPushController extends GetxController {
   }) async {
     if (!canMutate) {
       _error(isPrimary
-          ? 'The room session is still connecting. Try again in a moment.'
-          : 'Only the PRIMARY device can change Media Push.');
+          ? TKeys.mpErrConnecting.tr
+          : TKeys.mpErrPrimaryChange.tr);
       return false;
     }
 
@@ -210,7 +209,7 @@ class MediaPushController extends GetxController {
       return false;
     } catch (e) {
       log('Media push save error: $e', name: 'MediaPush');
-      _error('Network error. Please try again.');
+      _error(TKeys.svcNetworkError.tr);
       return false;
     } finally {
       saving.value = false;
@@ -244,11 +243,12 @@ class MediaPushController extends GetxController {
       // that disappears.
       if (result.errors.isNotEmpty) {
         startWarning.value = result.errorSummary;
-        _info('Media Push started for '
-            '${result.converters.length} of '
-            '${result.converters.length + result.errors.length} destinations.');
+        _info(TKeys.mpStartedPartial.trParams({
+          'ok': '${result.converters.length}',
+          'total': '${result.converters.length + result.errors.length}',
+        }));
       } else {
-        _info('Media Push started.');
+        _info(TKeys.mpStarted.tr);
       }
 
       await load(silent: true);
@@ -258,7 +258,7 @@ class MediaPushController extends GetxController {
       return false;
     } catch (e) {
       log('Media push start error: $e', name: 'MediaPush');
-      _error('Network error. Please try again.');
+      _error(TKeys.svcNetworkError.tr);
       return false;
     } finally {
       starting.value = false;
@@ -268,7 +268,7 @@ class MediaPushController extends GetxController {
   /// `DELETE …/media-push` — disconnects every external platform.
   Future<bool> stop() async {
     if (!canMutate) {
-      _error('Only the PRIMARY device can stop Media Push.');
+      _error(TKeys.mpErrPrimaryStop.tr);
       return false;
     }
 
@@ -280,8 +280,8 @@ class MediaPushController extends GetxController {
       );
       startWarning.value = null;
       _info(deleted > 0
-          ? 'Media Push stopped ($deleted ${deleted == 1 ? 'converter' : 'converters'}).'
-          : 'Media Push stopped.');
+          ? TKeys.mpStoppedCount.trParams({'count': '$deleted'})
+          : TKeys.mpStopped.tr);
       await load(silent: true);
       return true;
     } on AuctionApiException catch (e) {
@@ -289,7 +289,7 @@ class MediaPushController extends GetxController {
       return false;
     } catch (e) {
       log('Media push stop error: $e', name: 'MediaPush');
-      _error('Network error. Please try again.');
+      _error(TKeys.svcNetworkError.tr);
       return false;
     } finally {
       stopping.value = false;
@@ -311,16 +311,15 @@ class MediaPushController extends GetxController {
   String _friendly(AuctionApiException e) {
     switch (e.code) {
       case 'AUTH_FORBIDDEN':
-        return 'Only the PRIMARY device can change Media Push. Take main '
-            'device control from Devices & control, then try again.';
+        return TKeys.mpErrForbidden.tr;
       case 'AUTH_ROLE_REQUIRED':
-        return 'Sign in with your seller account to use Media Push.';
+        return TKeys.mpErrSignIn.tr;
       case 'AUTH_EXPIRED':
-        return 'Your session expired. Reopen the room and try again.';
+        return TKeys.mpErrSessionExpired.tr;
       case 'NOT_FOUND':
-        return 'This stream is no longer available.';
+        return TKeys.reqStreamNotFound.tr;
       case 'RATE_LIMITED':
-        return 'Too many attempts. Wait a few seconds and try again.';
+        return TKeys.mpErrTooMany.tr;
       case 'TIMEOUT':
         return e.message;
       default:

@@ -14,7 +14,7 @@ import 'package:tommesalg_seller_app/view_models/view_models/language_view_model
 ///  * flipping the locale repaints every `.tr` in the tree, and
 ///  * `LanguageViewModel.changeLanguage` moves the locale and persists it.
 void main() {
-  Map<String, String> _load(String code) =>
+  Map<String, String> load(String code) =>
       (jsonDecode(File('assets/translations/$code.json').readAsStringSync())
               as Map<String, dynamic>)
           .map((k, v) => MapEntry(k, v.toString()));
@@ -23,8 +23,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     Get.reset();
     LocalizationService.translations = {
-      'nb_NO': _load('nb'),
-      'en_US': _load('en'),
+      'nb_NO': load('nb'),
+      'en_US': load('en'),
     };
   });
 

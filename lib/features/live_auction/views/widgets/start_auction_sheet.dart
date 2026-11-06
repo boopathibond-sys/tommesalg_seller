@@ -107,8 +107,24 @@ class _StartAuctionSheetState extends State<StartAuctionSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            CustomText(TKeys.sasStartAuction.tr, fontSize: 20,
-                fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+            Row(
+              children: [
+                Expanded(
+                  child: CustomText(TKeys.sasStartAuction.tr, fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded,
+                      color: AppColors.textPrimary),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                ),
+              ],
+            ),
             if (widget.nextProduct != null) ...[
               const SizedBox(height: 12),
               _ProductDetailsCard(product: widget.nextProduct!),

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../controllers/seller_products_controller.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/zoomable_image_viewer.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../models/seller_product.dart';
 import '../../../models/seller_product_detail.dart';
@@ -76,7 +77,10 @@ class _ProductDetailViewState extends State<ProductDetailView> {
   @override
   void initState() {
     super.initState();
-    widget.ctrl.loadDetail(_product.id);
+    // Always re-fetch on open: a cached copy (from an earlier visit) still
+    // renders immediately, but the page should never show stale data or skip
+    // the request entirely.
+    widget.ctrl.loadDetail(_product.id, force: true);
     // Only the preview carries the size chart, and it's usually already cached
     // by the grid (it resolves card images through the same call).
     widget.ctrl.loadPreview(_product.id);
@@ -119,7 +123,8 @@ class _ProductDetailViewState extends State<ProductDetailView> {
   Future<void> _editShipping(SellerProductDetail? detail) async {
     if (detail == null) return;
 
-    final choice = await showShippingOptionsSheet(context: context, detail: detail);
+    final choice =
+        await showShippingOptionsSheet(context: context, detail: detail);
     if (choice == null || !mounted) return;
 
     // Guard here as well as in the sheet: a seller who reopened the sheet and
@@ -207,8 +212,7 @@ class _ProductDetailViewState extends State<ProductDetailView> {
                   ],
                 )
               : null,
-          bottomNavigationBar:
-              metrics.split ? null : _EditBar(onTap: _onEdit),
+          bottomNavigationBar: metrics.split ? null : _EditBar(onTap: _onEdit),
           body: Obx(() {
             final detail = widget.ctrl.detailFor(_product.id);
             final preview = widget.ctrl.previewFor(_product.id);
@@ -329,31 +333,31 @@ class _ProductDetailViewState extends State<ProductDetailView> {
         ],
       ),
       const SizedBox(height: 26),
-
       _SectionTitle(TKeys.pricingAndAuction.tr, icon: Icons.sell_outlined),
       const SizedBox(height: 14),
       _InfoGrid(
         columns: columns,
         items: [
-          _Info(TKeys.catalogPrice.tr, _money(detail?.regularPrice), accent: true),
+          _Info(TKeys.catalogPrice.tr, _money(detail?.regularPrice),
+              accent: true),
           _Info(TKeys.veilPris.tr,
               _money(detail?.originalPrice ?? _product.originalPrice),
               accent: true),
-          _Info(TKeys.buyNowPrice.tr, _money(detail?.buyNowPrice), accent: true),
+          _Info(TKeys.buyNowPrice.tr, _money(detail?.buyNowPrice),
+              accent: true),
           _Info(TKeys.startingPriceAuction.tr, _money(detail?.startingPrice)),
           _Info(TKeys.bidStep.tr, _money(detail?.bidIncrement)),
           _Info(TKeys.fieldBottomPrice.tr, _money(detail?.bottomPrice)),
+          _Info(TKeys.fieldMsrp.tr, _usd(detail?.msrp)),
         ],
       ),
       const SizedBox(height: 26),
-
       _ShippingCard(
         detail: detail,
         onUpdate: () => _editShipping(detail),
         metrics: metrics,
       ),
       const SizedBox(height: 26),
-
       _SectionTitle(
         TKeys.warehouseAndLogistics.tr,
         icon: Icons.warehouse_outlined,
@@ -368,14 +372,56 @@ class _ProductDetailViewState extends State<ProductDetailView> {
           _Info(TKeys.searchBarcode.tr, detail?.barcodeLookup),
           _Info(TKeys.fieldWeight.tr, _weight(detail?.weight)),
           _Info(TKeys.fieldMaterial.tr, detail?.material),
-          _Info(TKeys.mainColor.tr, detail?.colour),
-          _Info(TKeys.availableSizes.tr, _list(detail?.sizesAvailable)),
-          _Info(TKeys.colorSelection.tr, _list(detail?.colorsAvailable)),
           _Info(TKeys.vendorStyle.tr, detail?.vendorStyle),
         ],
       ),
       const SizedBox(height: 26),
-
+      _SectionTitle(TKeys.sizeAndColour.tr, icon: Icons.straighten_rounded),
+      const SizedBox(height: 14),
+      _InfoGrid(
+        columns: columns,
+        items: [
+          _Info(TKeys.fieldUsSize.tr, detail?.usSize ?? preview?.usSize,
+              accent: true),
+          _Info(TKeys.fieldEuSize.tr, detail?.euSize ?? preview?.euSize,
+              accent: true),
+          _Info(TKeys.fieldSize.tr, detail?.size ?? preview?.size),
+          _Info(TKeys.fieldSizeFilter.tr,
+              detail?.sizeFilter ?? _rawStr(preview?.raw['sizeFilter'])),
+          _Info(TKeys.fieldSizeType.tr, detail?.sizeType ?? preview?.sizeType),
+          _Info(TKeys.availableSizes.tr,
+              _list(detail?.sizesAvailable ?? preview?.sizesAvailable)),
+          // Norwegian name only; the English vendor colour is a fallback for
+          // rows that haven't been translated yet.
+          _Info(
+            TKeys.colorLabel.tr,
+            detail?.colourNorsk ??
+                _rawStr(preview?.raw['colourNorsk']) ??
+                detail?.colour ??
+                preview?.colour,
+          ),
+          _Info(TKeys.colorSelection.tr, _list(detail?.colorsAvailable)),
+        ],
+      ),
+      if (_rawImages(preview?.raw['sizeSpecImages']).isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _ImageStripCard(
+          title: TKeys.sizeSpecImages.tr,
+          images: _rawImages(preview!.raw['sizeSpecImages']),
+        ),
+      ],
+      if (_rawStr(preview?.raw['defectDescription']) != null ||
+          _rawImages(preview?.raw['defectImages']).isNotEmpty) ...[
+        const SizedBox(height: 26),
+        _SectionTitle(TKeys.defectInfo.tr, icon: Icons.report_problem_outlined),
+        const SizedBox(height: 14),
+        _ImageStripCard(
+          title: TKeys.defectDescription.tr,
+          body: _rawStr(preview!.raw['defectDescription']),
+          images: _rawImages(preview.raw['defectImages']),
+        ),
+      ],
+      const SizedBox(height: 26),
       _SectionTitle(
         TKeys.extendedDescription.tr,
         icon: Icons.notes_rounded,
@@ -392,7 +438,8 @@ class _ProductDetailViewState extends State<ProductDetailView> {
       ),
       if ((detail?.features ?? '').isNotEmpty) ...[
         const SizedBox(height: 12),
-        _DescriptionBlock(title: TKeys.fieldFeatures.tr, body: detail!.features),
+        _DescriptionBlock(
+            title: TKeys.fieldFeatures.tr, body: detail!.features),
       ],
       if ((detail?.materialsAndCare ?? '').isNotEmpty) ...[
         const SizedBox(height: 12),
@@ -427,13 +474,19 @@ class _ProductDetailViewState extends State<ProductDetailView> {
         _SizeChartCard(chart: preview!.sizeChart!),
       ],
       const SizedBox(height: 26),
-
       _SectionTitle(TKeys.systemData.tr, icon: Icons.dns_outlined),
       const SizedBox(height: 14),
       _InfoGrid(
         columns: columns,
         items: [
           _Info(TKeys.importFlag.tr, detail?.importTag),
+          _Info(
+            TKeys.fieldTaxonomy.tr,
+            detail?.taxonomyNodeId,
+            onTap: detail?.taxonomyNodeId == null
+                ? null
+                : () => _copy(TKeys.fieldTaxonomy.tr, detail!.taxonomyNodeId!),
+          ),
           _Info(TKeys.distributedTo.tr, _sellers(detail?.assignedSellerCount)),
           _Info(
             TKeys.createdInCatalog.tr,
@@ -541,8 +594,7 @@ class _StackedLayout extends StatelessWidget {
     // product. Reserving the bar's own height inside the background keeps the
     // two apart, and the expanded height grows by the same amount so the
     // picture is no smaller than it was.
-    final barHeight =
-        MediaQuery.paddingOf(context).top + kToolbarHeight;
+    final barHeight = MediaQuery.paddingOf(context).top + kToolbarHeight;
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(
@@ -633,8 +685,8 @@ class _CollapsedTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settings = context
-        .dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+    final settings =
+        context.dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
     final deltaExtent = (settings?.maxExtent ?? 0) - (settings?.minExtent ?? 0);
     final t = deltaExtent <= 0
         ? 1.0
@@ -730,6 +782,31 @@ String? _money(num? value) => value == null ? null : formatNok(value);
 
 String _pricePoint(num? value) => formatNokOrDash(value);
 
+/// MSRP is the one vendor-feed figure that arrives in US dollars.
+String? _usd(num? value) {
+  if (value == null) return null;
+  return '\$${value % 1 == 0 ? value.toInt() : value.toStringAsFixed(2)}';
+}
+
+/// A loose `raw` string, with blanks and `"null"` leftovers treated as absent.
+String? _rawStr(dynamic value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  if (text.isEmpty || text.toLowerCase() == 'null') return null;
+  return text;
+}
+
+/// Renderable image URLs from a loose `raw` list.
+List<String> _rawImages(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map((e) => e is Map ? (e['url'] ?? e['image']) : e)
+      .map(_rawStr)
+      .whereType<String>()
+      .where((e) => e.startsWith('http'))
+      .toList();
+}
+
 /// Weight carries the catalog's own unit, matching the web page.
 String? _weight(num? value) {
   if (value == null) return null;
@@ -750,10 +827,18 @@ String? _sellers(int? count) {
 String? _dateTime(DateTime? value) {
   if (value == null) return null;
   final months = [
-    TKeys.monthJanuary.tr, TKeys.monthFebruary.tr, TKeys.monthMarch.tr,
-    TKeys.monthApril.tr, TKeys.monthMay.tr, TKeys.monthJune.tr,
-    TKeys.monthJuly.tr, TKeys.monthAugust.tr, TKeys.monthSeptember.tr,
-    TKeys.monthOctober.tr, TKeys.monthNovember.tr, TKeys.monthDecember.tr,
+    TKeys.monthJanuary.tr,
+    TKeys.monthFebruary.tr,
+    TKeys.monthMarch.tr,
+    TKeys.monthApril.tr,
+    TKeys.monthMay.tr,
+    TKeys.monthJune.tr,
+    TKeys.monthJuly.tr,
+    TKeys.monthAugust.tr,
+    TKeys.monthSeptember.tr,
+    TKeys.monthOctober.tr,
+    TKeys.monthNovember.tr,
+    TKeys.monthDecember.tr,
   ];
 
   final local = value.toLocal();
@@ -1199,9 +1284,7 @@ class _Tile extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: highlighted
-                    ? AppColors.brandNavy
-                    : AppColors.textMuted,
+                color: highlighted ? AppColors.brandNavy : AppColors.textMuted,
               ),
               const SizedBox(width: 7),
               Flexible(
@@ -1413,7 +1496,8 @@ class _Pill extends StatelessWidget {
         color: selected ? AppColors.brandYellow : _canvas,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: selected ? AppColors.brandNavy.withOpacity(0.2)
+          color: selected
+              ? AppColors.brandNavy.withOpacity(0.2)
               : AppColors.borderGrey,
         ),
       ),
@@ -1477,8 +1561,8 @@ class _UpdateShippingButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.tune_rounded, size: 15,
-                    color: AppColors.brandYellow),
+                const Icon(Icons.tune_rounded,
+                    size: 15, color: AppColors.brandYellow),
                 const SizedBox(width: 8),
                 Flexible(
                   child: CustomText(
@@ -1681,26 +1765,111 @@ class _SizeChartCard extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 itemCount: images.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (_, i) => ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    images[i],
-                    width: 120,
-                    height: 120,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                // Tap → large, zoomable view of every photo in this strip.
+                itemBuilder: (context, i) => GestureDetector(
+                  onTap: () => showZoomableImages(
+                    context,
+                    images: images,
+                    initialIndex: i,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      images[i],
                       width: 120,
                       height: 120,
-                      color: _canvas,
-                      child: const Icon(
-                        Icons.image_not_supported_outlined,
-                        color: AppColors.textMuted,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 120,
+                        height: 120,
+                        color: _canvas,
+                        child: const Icon(
+                          Icons.image_not_supported_outlined,
+                          color: AppColors.textMuted,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Titled card with optional text and a horizontal strip of images — used for
+/// size-spec photos and the defect block.
+class _ImageStripCard extends StatelessWidget {
+  const _ImageStripCard({
+    required this.title,
+    this.body,
+    this.images = const [],
+  });
+
+  final String title;
+  final String? body;
+  final List<String> images;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CustomText(
+            title,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+          ),
+          if (body != null) ...[
+            const SizedBox(height: 8),
+            CustomText(
+              body!,
+              fontSize: 13.5,
+              height: 1.4,
+              color: AppColors.textPrimary,
+            ),
+          ],
+          if (images.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 120,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: images.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                // Tap → large, zoomable view of every photo in this strip.
+                itemBuilder: (context, i) => GestureDetector(
+                  onTap: () => showZoomableImages(
+                    context,
+                    images: images,
+                    initialIndex: i,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      images[i],
+                      width: 120,
+                      height: 120,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 120,
+                        height: 120,
+                        color: _canvas,
+                        child: const Icon(
+                          Icons.image_not_supported_outlined,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1847,7 +2016,8 @@ class _EditAction extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.edit_rounded, size: 15, color: AppColors.brandNavy),
+                  const Icon(Icons.edit_rounded,
+                      size: 15, color: AppColors.brandNavy),
                   const SizedBox(width: 7),
                   CustomText(
                     TKeys.edit.tr,
@@ -1920,27 +2090,53 @@ class _Gallery extends StatelessWidget {
               controller: controller,
               itemCount: images.length,
               onPageChanged: onPageChanged,
-              itemBuilder: (_, i) => Image.network(
-                images[i],
-                fit: BoxFit.contain,
-                loadingBuilder: (_, child, progress) => progress == null
-                    ? child
-                    : const Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: AppColors.brandNavy,
+              // Tap a photo to open it full screen with pinch / double-tap
+              // zoom and a close (✕) button.
+              itemBuilder: (_, i) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => showZoomableImages(
+                  context,
+                  images: images,
+                  initialIndex: i,
+                ),
+                child: Image.network(
+                  images[i],
+                  fit: BoxFit.contain,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: AppColors.brandNavy,
+                            ),
                           ),
                         ),
-                      ),
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(
-                    Icons.image_not_supported_outlined,
-                    color: AppColors.textMuted,
-                    size: 34,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(
+                      Icons.image_not_supported_outlined,
+                      color: AppColors.textMuted,
+                      size: 34,
+                    ),
                   ),
+                ),
+              ),
+            ),
+            // Hint that the photo can be opened full screen.
+            Positioned(
+              bottom: 56,
+              right: 14,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.zoom_out_map_rounded,
+                      size: 14, color: Colors.white),
                 ),
               ),
             ),

@@ -1,4 +1,5 @@
 import 'dart:developer';
+import '../core/localization/translation_keys.dart';
 
 import 'package:get/get.dart';
 
@@ -110,13 +111,13 @@ class ProfileController extends GetxController {
             if (!silent) _isLoading.value = false;
             return true;
           }
-          lastError = 'Unexpected response format.';
+          lastError = TKeys.errUnexpectedFormat.tr;
         } else {
-          lastError = 'Failed to load profile: ${response.statusCode}';
+          lastError = TKeys.errLoadProfile.trParams({'code': '${response.statusCode}'});
         }
       } catch (e) {
         log('Profile fetch error (attempt $attempt/$maxAttempts): $e');
-        lastError = 'Network error. Please try again.';
+        lastError = TKeys.svcNetworkError.tr;
       }
 
       // Back off before retrying, unless this was the final attempt.
@@ -129,7 +130,7 @@ class ProfileController extends GetxController {
     // swapping it for the error card; only surface the error if we have
     // nothing to show.
     if (!silent || _profile.value == null) {
-      _errorMessage.value = lastError ?? 'Network error. Please try again.';
+      _errorMessage.value = lastError ?? TKeys.svcNetworkError.tr;
     }
     if (!silent) _isLoading.value = false;
     return false;
@@ -154,6 +155,12 @@ class ProfileController extends GetxController {
     String? orNull(String? v) =>
         (v == null || v.trim().isEmpty) ? null : v.trim();
 
+    // The server types `bio` as a string and rejects `null` with
+    // `fieldErrors.bio: ["Invalid input"]`. So an empty bio is left out when
+    // the profile had none, and sent as "" only when the seller cleared one.
+    final trimmedBio = bio?.trim() ?? '';
+    final hadBio = (_profile.value?.bio ?? '').trim().isNotEmpty;
+
     try {
       final response = await _api.patch(
         '${EnvConfig.baseUrl}/api/v1/seller/profile',
@@ -161,7 +168,7 @@ class ProfileController extends GetxController {
         body: {
           'displayName': displayName.trim(),
           'businessName': businessName.trim(),
-          'bio': orNull(bio),
+          if (trimmedBio.isNotEmpty || hadBio) 'bio': trimmedBio,
           'publicProfileSlug': orNull(publicProfileSlug),
           'sections': sections.toJson(),
           'socialLinksInput': socialLinks.toInputJson(),
@@ -181,15 +188,15 @@ class ProfileController extends GetxController {
           }
           return true;
         }
-        _errorMessage.value = 'Unexpected response format.';
+        _errorMessage.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
-      _errorMessage.value = 'Failed to update profile: ${response.statusCode}';
+      _errorMessage.value = TKeys.errUpdateProfile.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Profile update error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      _errorMessage.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isSaving.value = false;
@@ -217,14 +224,14 @@ class ProfileController extends GetxController {
       );
 
       if (!upload.isSuccess) {
-        _errorMessage.value = 'Upload failed: ${upload.statusCode}';
+        _errorMessage.value = TKeys.errUploadFailed.trParams({'code': '${upload.statusCode}'});
         return false;
       }
 
       final uploadBody = upload.json;
       final s3Key = uploadBody['s3Key'] as String?;
       if (uploadBody['success'] != true || s3Key == null || s3Key.isEmpty) {
-        _errorMessage.value = 'Upload did not return an image key.';
+        _errorMessage.value = TKeys.errNoImageKey.tr;
         return false;
       }
 
@@ -247,15 +254,15 @@ class ProfileController extends GetxController {
           }
           return true;
         }
-        _errorMessage.value = 'Unexpected response format.';
+        _errorMessage.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
-      _errorMessage.value = 'Failed to save image: ${patch.statusCode}';
+      _errorMessage.value = TKeys.errSaveImage.trParams({'code': '${patch.statusCode}'});
       return false;
     } catch (e) {
       log('Profile image upload error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      _errorMessage.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _uploadingImage.value = null;

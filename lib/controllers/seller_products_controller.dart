@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:developer';
+import '../core/localization/translation_keys.dart';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
 
 import '../core/config/env_config.dart';
@@ -249,16 +252,16 @@ class SellerProductsController extends GetxController {
           _error.value = null;
           return true;
         }
-        _error.value = 'Unexpected response format.';
+        _error.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
       _error.value = _errorMessage(response) ??
-          'Failed to load products: ${response.statusCode}';
+          TKeys.errLoadProducts.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Seller products fetch error: $e');
-      if (seq == _loadSeq) _error.value = 'Network error. Please try again.';
+      if (seq == _loadSeq) _error.value = TKeys.svcNetworkError.tr;
       return false;
     }
   }
@@ -306,6 +309,19 @@ class SellerProductsController extends GetxController {
   /// a retry rather than silently re-requesting on every rebuild.
   bool detailFailed(String id) => _failedDetails.contains(id);
 
+  /// Refreshes [_details] listeners, postponing to after the current frame
+  /// when called during a build/layout phase.
+  void _refreshDetailsSafely() {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      _details.refresh();
+    } else {
+      SchedulerBinding.instance
+          .addPostFrameCallback((_) => _details.refresh());
+    }
+  }
+
   /// Loads `GET /api/v1/seller/products/{id}` — the fullest payload we have
   /// (auction prices, warehouse codes, shipping, plus the platform shipping
   /// rules) — and caches it per id.
@@ -322,8 +338,10 @@ class SellerProductsController extends GetxController {
 
     _loadingDetails.add(id);
     _failedDetails.remove(id);
-    // Nudge listeners so the spinner appears on this frame.
-    _details.refresh();
+    // Nudge listeners so the spinner appears. Callers may be mid-build
+    // (e.g. a page's initState), where notifying an Obx synchronously throws
+    // "setState() or markNeedsBuild() called during build" -- defer it then.
+    _refreshDetailsSafely();
 
     final url = '${EnvConfig.baseUrl}/api/v1/seller/products/'
         '${Uri.encodeComponent(id)}';
@@ -333,17 +351,17 @@ class SellerProductsController extends GetxController {
     final shippingOptions = ShippingOptionsService.instance.load();
 
     try {
-      log('[ProductDetail] GET $url', name: 'SellerProducts');
+      debugPrint('[ProductDetail] GET $url');
 
       final response = await _api.get(
         url,
         headers: AuthService.instance.authHeaders,
       );
 
-      log(
+      // ApiClient already prints the full request/response; just tag it.
+      debugPrint(
         '[ProductDetail] ${response.statusCode} ($id) '
-        '${response.body.length} bytes\n${response.body}',
-        name: 'SellerProducts',
+        '${response.body.length} bytes',
       );
 
       if (response.isSuccess) {
@@ -357,35 +375,27 @@ class SellerProductsController extends GetxController {
                 ShippingOptionsService.instance.fetched?.amountsNok,
           );
           _details[id] = detail;
-          log(
+          debugPrint(
             '[ProductDetail] parsed "${detail.name}" — '
             'status ${detail.status}, stock ${detail.stockCount}, '
             'buyNow ${detail.buyNowPrice}, images ${detail.imageUrls.length}, '
             'platformShipping ${detail.platformShipping != null}',
-            name: 'SellerProducts',
           );
           return detail;
         }
-        log(
+        debugPrint(
           '[ProductDetail] unexpected payload shape ($id): '
           'success=${body['success']}, data=${data.runtimeType}',
-          name: 'SellerProducts',
         );
       }
 
-      log(
+      debugPrint(
         '[ProductDetail] failed ($id): ${response.statusCode}',
-        name: 'SellerProducts',
       );
       _failedDetails.add(id);
       return null;
     } catch (e, stack) {
-      log(
-        '[ProductDetail] error ($id): $e',
-        name: 'SellerProducts',
-        error: e,
-        stackTrace: stack,
-      );
+      debugPrint('[ProductDetail] error ($id): $e\n$stack');
       _failedDetails.add(id);
       return null;
     } finally {
@@ -468,7 +478,7 @@ class SellerProductsController extends GetxController {
     final reason = editReason.trim();
     if (productId.isEmpty) return false;
     if (reason.isEmpty || reason.length > 2000) {
-      _editError.value = 'An edit reason of 1–2000 characters is required.';
+      _editError.value = TKeys.errEditReasonRequired.tr;
       return false;
     }
     if (_isSavingEdit.value) return false;
@@ -512,12 +522,12 @@ class SellerProductsController extends GetxController {
 
       _editError.value = _errorMessage(response) ??
           (response.statusCode == 429
-              ? 'Too many edits — the limit is 30 per minute. Try again shortly.'
-              : 'Could not save the changes (${response.statusCode}).');
+              ? TKeys.errTooManyEdits.tr
+              : TKeys.errSaveChanges.trParams({'code': '${response.statusCode}'}));
       return false;
     } catch (e) {
       log('Product edit error ($productId): $e');
-      _editError.value = 'Network error. Please try again.';
+      _editError.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isSavingEdit.value = false;

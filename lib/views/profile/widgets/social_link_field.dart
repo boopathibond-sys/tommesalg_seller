@@ -40,6 +40,11 @@ class SocialLinkField extends StatefulWidget {
 }
 
 class _SocialLinkFieldState extends State<SocialLinkField> {
+  /// Brand names stay as-is; only the generic "Website" entry is translated.
+  /// [SocialLinkField.platform] itself stays English — it keys link handling.
+  String get _displayName =>
+      widget.platform == 'Website' ? TKeys.websiteLabel.tr : widget.platform;
+
   bool _editing = false;
 
   String get _value => widget.controller.text.trim();
@@ -72,7 +77,7 @@ class _SocialLinkFieldState extends State<SocialLinkField> {
         children: [
           Expanded(
             child: CustomText(
-              widget.platform,
+              _displayName,
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: AppColors.textMuted,
@@ -102,7 +107,7 @@ class _SocialLinkFieldState extends State<SocialLinkField> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 CustomText(
-                  widget.platform,
+                  _displayName,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textMuted,

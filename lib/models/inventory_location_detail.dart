@@ -1,4 +1,6 @@
+import 'package:get/get.dart';
 import 'inventory_tag.dart';
+import '../core/localization/translation_keys.dart';
 
 /// Full warehouse SKU record from
 /// `GET /api/v1/seller/inventory/locations/{id}` (guide §5.2).
@@ -36,9 +38,12 @@ class InventoryLocationDetail {
 
   /// Labeled path, e.g. "Zone 01 · Aisle A · Shelf B3" (skips blank parts).
   String get locationPath => [
-        if (zone != null && zone!.isNotEmpty) 'Zone $zone',
-        if (aisle != null && aisle!.isNotEmpty) 'Aisle $aisle',
-        if (shelf != null && shelf!.isNotEmpty) 'Shelf $shelf',
+        if (zone != null && zone!.isNotEmpty)
+          TKeys.locZone.trParams({'value': zone!}),
+        if (aisle != null && aisle!.isNotEmpty)
+          TKeys.locAisle.trParams({'value': aisle!}),
+        if (shelf != null && shelf!.isNotEmpty)
+          TKeys.locShelf.trParams({'value': shelf!}),
       ].join(' · ');
 
   factory InventoryLocationDetail.fromJson(Map<String, dynamic> json) {

@@ -179,7 +179,7 @@ class _EditProfileViewState extends State<EditProfileView> {
             children: [
               _label(TKeys.epBasicInformation.tr),
               const SizedBox(height: 14),
-              _fieldLabel(TKeys.epDisplayName.tr),
+              _fieldLabel(TKeys.epDisplayName.tr, required: true),
               AuthTextField(
                 controller: _displayName,
                 icon: Icons.person_outline_rounded,
@@ -307,14 +307,34 @@ class _EditProfileViewState extends State<EditProfileView> {
   /// Standing caption above an input. Unlike a hint it survives typing — and
   /// this form opens pre-filled from the saved profile, so the hints are
   /// almost never on screen to name the field in the first place.
-  Widget _fieldLabel(String text) {
+  /// Label above an input; [required] appends a red asterisk.
+  Widget _fieldLabel(String text, {bool required = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
-      child: CustomText(
-        text,
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        color: AppColors.textSecondary,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: CustomText(
+              text,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if (required)
+            const Padding(
+              padding: EdgeInsets.only(left: 2),
+              child: Text(
+                '*',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.red,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

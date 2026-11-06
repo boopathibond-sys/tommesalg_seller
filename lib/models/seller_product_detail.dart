@@ -49,6 +49,9 @@ class SellerProductDetail {
   final num? weight;
   final String? material;
   final String? colour;
+
+  /// Norwegian colour name (`colourNorsk`), what buyers see.
+  final String? colourNorsk;
   final List<String> sizesAvailable;
   final List<String> colorsAvailable;
   final String? taxonomyNodeId;
@@ -56,6 +59,9 @@ class SellerProductDetail {
   final String? size;
   final String? usSize;
   final String? euSize;
+
+  /// Normalised size bucket the buyer-side filter matches on.
+  final String? sizeFilter;
   final String? vendorStyle;
   final String? importTag;
 
@@ -107,6 +113,7 @@ class SellerProductDetail {
     this.weight,
     this.material,
     this.colour,
+    this.colourNorsk,
     this.sizesAvailable = const [],
     this.colorsAvailable = const [],
     this.taxonomyNodeId,
@@ -114,6 +121,7 @@ class SellerProductDetail {
     this.size,
     this.usSize,
     this.euSize,
+    this.sizeFilter,
     this.vendorStyle,
     this.importTag,
     this.assignedSellerCount,
@@ -188,6 +196,7 @@ class SellerProductDetail {
       weight: _num(json['weight']),
       material: _str(json['material']),
       colour: _str(json['colour']),
+      colourNorsk: _str(json['colourNorsk']),
       sizesAvailable: _stringList(json['sizesAvailable']),
       colorsAvailable: _stringList(json['colorsAvailable']),
       taxonomyNodeId: _str(json['taxonomyNodeId']),
@@ -195,6 +204,7 @@ class SellerProductDetail {
       size: _str(json['size']),
       usSize: _str(json['usSize']),
       euSize: _str(json['euSize']),
+      sizeFilter: _str(json['sizeFilter']),
       vendorStyle: _str(json['vendorStyle']),
       importTag: _str(json['importTag']),
       assignedSellerCount: _num(json['assignedSellerCount'])?.toInt(),

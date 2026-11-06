@@ -269,11 +269,8 @@ class _PermissionDenied extends StatelessWidget {
           const SizedBox(height: 8),
           CustomText(
             permanent
-                ? 'To broadcast your live auction we need access to your camera '
-                    'and microphone. Turn them on in Settings — the room opens '
-                    'by itself when you come back.'
-                : 'To broadcast your live auction we need access to your camera '
-                    'and microphone. Tap Allow on the prompts to continue.',
+                ? TKeys.arPermissionBodySettings.tr
+                : TKeys.arPermissionBodyPrompt.tr,
             fontSize: 13, fontWeight: FontWeight.w500, height: 1.4,
             textAlign: TextAlign.center, color: AppColors.textSecondary,
           ),

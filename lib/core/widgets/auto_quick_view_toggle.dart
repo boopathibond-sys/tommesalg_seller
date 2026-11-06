@@ -1,4 +1,6 @@
+import 'package:get/get.dart';
 import 'package:flutter/material.dart';
+import '../localization/translation_keys.dart';
 
 import '../theme/app_colors.dart';
 import 'custom_text.dart';
@@ -60,7 +62,7 @@ class AutoQuickViewToggle extends StatelessWidget {
             ),
             const SizedBox(width: 5),
             CustomText(
-              'Auto quick view',
+              TKeys.autoQuickView.tr,
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
               color: accent,

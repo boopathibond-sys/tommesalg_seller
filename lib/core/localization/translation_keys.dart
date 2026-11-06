@@ -16,128 +16,12 @@ abstract class TKeys {
   TKeys._();
 
   // ── General / brand ─────────────────────────────────────────────────────
-  static const appName      = 'app_name';
-  static const tagline      = 'tagline';
   static const loading      = 'loading';
   static const cancel       = 'cancel';
   static const ok           = 'ok';
   static const continueText = 'continue';
   static const retry        = 'retry';
-  static const back         = 'back';
-  static const required     = 'required';
   static const optional     = 'optional';
-
-  // ── Splash ──────────────────────────────────────────────────────────────
-  static const splashLoading = 'splash_loading';
-
-  // ── Auth: login ─────────────────────────────────────────────────────────
-  static const loginTitle           = 'login_title';
-  static const loginSubtitle        = 'login_subtitle';
-  static const loginCta             = 'login_cta';
-  static const loginEmailLabel      = 'login_email_label';
-  static const loginEmailHint       = 'login_email_hint';
-  static const loginPasswordLabel   = 'login_password_label';
-  static const loginPasswordHint    = 'login_password_hint';
-  static const loginForgotPassword  = 'login_forgot_password';
-  static const loginVipps           = 'login_vipps';
-  static const loginGoogle          = 'login_google';
-  static const loginNoAccount       = 'login_no_account';
-  static const loginSignUp          = 'login_sign_up';
-  static const loginOrContinueWith  = 'login_or_continue_with';
-
-  // ── Auth: e-mail code ──────────────────────────────────────────────────
-  static const emailCodeMembersOnly    = 'email_code_members_only';
-  static const emailCodeNoAccount      = 'email_code_no_account';
-  static const emailCodeSendCta        = 'email_code_send_cta';
-  static const emailCodeWillSend       = 'email_code_will_send';
-  static const emailCodeSent           = 'email_code_sent';
-  static const emailCodeNewSent        = 'email_code_new_sent';
-  static const emailCodeVerifyTitle    = 'email_code_verify_title';
-  static const emailCodeVerifySubtitle = 'email_code_verify_subtitle';
-  static const emailCodeVerifyCta      = 'email_code_verify_cta';
-  static const emailCodeLabel          = 'email_code_label';
-  static const emailCodeHint           = 'email_code_hint';
-  static const emailCodeResend         = 'email_code_resend';
-  static const emailCodeChangeEmail    = 'email_code_change_email';
-  static const emailCodeEnterCode      = 'email_code_enter_code';
-
-  // ── Auth: register ─────────────────────────────────────────────────────
-  static const registerTitle            = 'register_title';
-  static const registerSubtitle         = 'register_subtitle';
-  static const registerNameLabel        = 'register_name_label';
-  static const registerNameHint         = 'register_name_hint';
-  static const registerEmailHint        = 'register_email_hint';
-  static const registerPhoneLabel       = 'register_phone_label';
-  static const registerPasswordHelper   = 'register_password_helper';
-  static const registerBirthLabel       = 'register_birth_label';
-  static const registerGenderLabel      = 'register_gender_label';
-  static const registerGenderHint       = 'register_gender_hint';
-  static const registerGenderSheetTitle = 'register_gender_sheet_title';
-  static const registerCta              = 'register_cta';
-  static const registerVipps            = 'register_vipps';
-  static const registerGoogle           = 'register_google';
-  static const registerHaveAccount      = 'register_have_account';
-  static const registerLoginNow         = 'register_login_now';
-  static const registerCheckEmail       = 'register_check_email';
-  static const genderMale               = 'gender_male';
-  static const genderFemale             = 'gender_female';
-  static const genderOther              = 'gender_other';
-
-  // ── Validation / errors ────────────────────────────────────────────────
-  static const validationEmailPasswordRequired = 'validation_email_password_required';
-  static const validationEmailRequired         = 'validation_email_required';
-  static const errorGeneric                    = 'error_generic';
-
-  // ── Bottom nav ─────────────────────────────────────────────────────────
-  static const tabHome      = 'tab_home';
-  static const tabExplore   = 'tab_explore';
-  static const tabSellers   = 'tab_sellers';
-  static const tabMessages  = 'tab_messages';
-  static const tabAccount   = 'tab_account';
-
-  // ── Home top bar ───────────────────────────────────────────────────────
-  static const homeSearchHint = 'home_search_hint';
-
-  // ── Categories ─────────────────────────────────────────────────────────
-  static const catForYou      = 'cat_for_you';
-  static const catSneakers    = 'cat_sneakers';
-  static const catFurniture   = 'cat_furniture';
-  static const catPokemon     = 'cat_pokemon';
-  static const catFashion     = 'cat_fashion';
-  static const catTech        = 'cat_tech';
-  static const catBooks       = 'cat_books';
-  static const catOutdoor     = 'cat_outdoor';
-  static const catClothes     = 'cat_clothes';
-  static const catElectronics = 'cat_electronics';
-  static const catHome        = 'cat_home';
-  static const catSports      = 'cat_sports';
-  static const catGarden      = 'cat_garden';
-  static const catOther       = 'cat_other';
-
-  // ── Live ───────────────────────────────────────────────────────────────
-  static const liveLabel      = 'live_label';
-  static const startBidSuffix = 'start_bid_suffix';
-
-  // ── Discover ───────────────────────────────────────────────────────────
-  static const discoverTitle    = 'discover_title';
-  static const discoverSubtitle = 'discover_subtitle';
-
-  // ── Empty states ───────────────────────────────────────────────────────
-  static const sellersEmptyTitle  = 'sellers_empty_title';
-  static const sellersEmptyBody   = 'sellers_empty_body';
-  static const messagesEmptyTitle = 'messages_empty_title';
-  static const messagesEmptyBody  = 'messages_empty_body';
-
-  // ── Account ────────────────────────────────────────────────────────────
-  static const accountTitle          = 'account_title';
-  static const accountWelcome        = 'account_welcome';
-  static const accountMyPurchases    = 'account_my_purchases';
-  static const accountAddresses      = 'account_addresses';
-  static const accountPaymentMethods = 'account_payment_methods';
-  static const accountNotifications  = 'account_notifications';
-  static const accountHelp           = 'account_help';
-  static const accountLanguage       = 'account_language';
-  static const accountLogout         = 'account_logout';
 
   // ── Account deletion (App Review guideline 5.1.1(v)) ───────────────────
   // An app that lets a user create an account has to let them delete it from
@@ -146,7 +30,6 @@ abstract class TKeys {
   // .requestAccountDeletionHandoff) — but the *entry point* must live in the
   // app and be easy to find, which is what these strings label.
   static const accountDelete         = 'account_delete';
-  static const accountDeleteSubtitle = 'account_delete_subtitle';
   static const accountDeleteTitle    = 'account_delete_title';
   static const accountDeleteMessage  = 'account_delete_message';
   static const accountDeleteContinue = 'account_delete_continue';
@@ -168,71 +51,9 @@ abstract class TKeys {
   // ── Profile sections ───────────────────────────────────────────────────
   // Names dropped the `profile_` prefix per product. Snake-case is kept in
   // the JSON keys themselves; users only ever see the resolved value.
-  static const deliveryAddresses    = 'delivery';
-  static const deliverySubtitle     = 'delivery sub';
-  static const billingAddresses     = 'billing';
-  static const billingSubtitle      = 'billing sub';
   static const paymentSection       = 'payment';
-  static const paymentSubtitle      = 'payment sub';
   static const shippingSection      = 'shipping';
-  static const shippingSubtitle     = 'shipping sub';
-  static const change               = 'change';
-  static const viewAll              = 'view all';
-  static const update               = 'update';
-  static const editProfileTitle     = 'edit profile title';
-  static const editProfileSubtitle  = 'edit profile subtitle';
-  static const nicknameLabel        = 'nickname label';
-  static const nicknameHint         = 'nickname hint';
-  static const useNicknamePublic    = 'use nickname public';
-  static const useNicknamePublicDesc = 'use nickname public desc';
-  static const profileUpdated       = 'profile updated';
-  static const primary              = 'primary';
-  static const noAddressAdded       = 'no address added';
-  static const addAddress           = 'add address';
-  static const addressesTitle       = 'addresses title';
-  static const addNewAddress        = 'add new address';
-  static const makeDefault          = 'make default';
-  static const editAction           = 'edit action';
-  static const deleteAction         = 'delete action';
-  static const noAddressesYet       = 'no addresses yet';
-  static const deleteAddressTitle   = 'delete address title';
-  static const deleteAddressBody    = 'delete address body';
-  static const addressName          = 'address name';
-  static const addressNameHint      = 'address name hint';
-  static const addressStreet        = 'address street';
-  static const addressStreetHint    = 'address street hint';
-  static const addressPostal        = 'address postal';
-  static const addressPostalHint    = 'address postal hint';
-  static const addressCity          = 'address city';
-  static const addressCityHint      = 'address city hint';
-  static const addressCountry       = 'address country';
-  static const addressCountryHint   = 'address country hint';
-  static const addressPhone         = 'address phone';
-  static const addressPhoneHint     = 'address phone hint';
-  static const setAsDefault         = 'set as default';
   static const save                 = 'save';
-  static const addressAdded         = 'address added';
-  static const editAddressTitle     = 'edit address title';
-  static const addressUpdated       = 'address updated';
-  static const homeDelivery         = 'home delivery';
-  static const homeDeliveryDesc     = 'home delivery desc';
-  static const pickupYourself       = 'pick up';
-  static const pickupYourselfDesc   = 'pick up desc';
-  static const addressHome          = 'address home';
-  static const addressWork          = 'address work';
-  static const cardExpiry           = 'card expiry';
-
-  // ── Payment methods list ──────────────────────────────────────────
-  static const paymentMethodsTitle  = 'payment methods title';
-  static const addNewCard           = 'add new card';
-  static const noPaymentMethodsYet  = 'no payment methods yet';
-  static const deletePaymentTitle   = 'delete payment title';
-  static const deletePaymentBody    = 'delete payment body';
-  static const paymentDeleted       = 'payment deleted';
-  static const addCardComingSoon    = 'add card coming soon';
-  /// Snackbar shown after Stripe's PaymentSheet confirms a SetupIntent
-  /// successfully and the backend has attached the new card.
-  static const cardAdded            = 'card added';
 
   // ── Language picker ────────────────────────────────────────────────────
   static const languageSheetTitle = 'language_sheet_title';
@@ -240,15 +61,6 @@ abstract class TKeys {
   static const languageNorwegian  = 'language_norwegian';
 
   // ── Todo (dev screen) ──────────────────────────────────────────────────
-  static const todoTitle          = 'todo_title';
-  static const todoEmpty          = 'todo_empty';
-  static const todoSomethingWrong = 'todo_something_wrong';
-  static const todoNew            = 'todo_new';
-  static const todoHint           = 'todo_hint';
-  static const todoAdd            = 'todo_add';
-  static const todoCancel         = 'todo_cancel';
-  static const shop         = 'shop';
-  static const myOrders         = 'my_orders';
   static const defaultText         = 'default';
 
   // ── Session / auth errors ──
@@ -263,7 +75,6 @@ abstract class TKeys {
 
   // ── My requests ──
   static const myRequests = 'my_requests';
-  static const myRequestsSub = 'my_requests_sub';
   static const historicalRequests = 'historical_requests';
   static const historicalRequestsSub = 'historical_requests_sub';
   static const reqFilterActive = 'req_filter_active';
@@ -285,13 +96,16 @@ abstract class TKeys {
   static const reqAdminNotes = 'req_admin_notes';
   static const reqLinePendingStock = 'req_line_pending_stock';
   static const reqLinePendingUnknown = 'req_line_pending_unknown';
-  static const reqQtyRequested = 'req_qty_requested';
-  static const reqQtyReserved = 'req_qty_reserved';
-  static const reqQtyPending = 'req_qty_pending';
   static const reqQtyDefect = 'req_qty_defect';
-  static const reqReservedWaiting = 'req_reserved_waiting';
+  static const reqNewScanLeft = 'req_new_scan_left';
+  static const reqNewScanOnly = 'req_new_scan_only';
+  static const reqQtyNewScan = 'req_qty_new_scan';
+  static const reqQtyConfirmed = 'req_qty_confirmed';
+  static const reqQtyLeftOnStream = 'req_qty_left_on_stream';
+  static const couldNotUpdateQuantity = 'could_not_update_quantity';
+  static const reqQtyEditTitle = 'req_qty_edit_title';
+  static const reqQtyRange = 'req_qty_range';
   static const reqDetailTitle = 'req_detail_title';
-  static const reqDetailsComingSoon = 'req_details_coming_soon';
   static const navStock = 'nav_stock';
   static const navProfile = 'nav_profile';
 
@@ -393,7 +207,6 @@ abstract class TKeys {
   static const couldNotUploadImage = 'could_not_upload_image';
   static const addCoverPhoto = 'add_cover_photo';
   static const addThumbnail = 'add_thumbnail';
-  static const websiteLabel = 'website_label';
   static const socialLinksLabel = 'social_links_label';
   static const logOutTitle = 'log_out_title';
   static const logOutBody = 'log_out_body';
@@ -404,24 +217,19 @@ abstract class TKeys {
   static const authEnterEmailPassword = 'auth_enter_email_password';
   static const authLoginFailed = 'auth_login_failed';
   static const authEnterEmail = 'auth_enter_email';
-  static const authCodeSendFailed = 'auth_code_send_failed';
   static const authLogIn = 'auth_log_in';
-  static const authSendLoginCode = 'auth_send_login_code';
   static const authWelcomeBackStore = 'auth_welcome_back_store';
   static const authForgotPassword = 'auth_forgot_password';
-  static const authCodeByEmail = 'auth_code_by_email';
   static const authStaySignedIn = 'auth_stay_signed_in';
+  static const authAppVersion = 'auth_app_version';
   static const authBusinessOnly = 'auth_business_only';
   static const authNotSellerYet = 'auth_not_seller_yet';
   static const authBecomeSeller = 'auth_become_seller';
   static const authBecomeSellerSub = 'auth_become_seller_sub';
-  static const authPassword = 'auth_password';
-  static const authEmailCode = 'auth_email_code';
   static const authSomethingWrong = 'auth_something_wrong';
   static const authForgotPasswordTitle = 'auth_forgot_password_title';
   static const authForgotPasswordBody = 'auth_forgot_password_body';
   static const authSendResetLink = 'auth_send_reset_link';
-  static const authPasswordTooShort = 'auth_password_too_short';
   static const authPasswordsDoNotMatch = 'auth_passwords_do_not_match';
   static const authPasswordUpdateFailed = 'auth_password_update_failed';
   static const authPasswordUpdated = 'auth_password_updated';
@@ -443,24 +251,6 @@ abstract class TKeys {
   static const authResetCodeHint = 'auth_reset_code_hint';
 
   // ── Auth: code verification & gate ──
-  static const verifyCodeTitle = 'verify_code_title';
-  static const verifyEnterCode = 'verify_enter_code';
-  static const verifyFailed = 'verify_failed';
-  static const verifyResendFailed = 'verify_resend_failed';
-  static const verifyNewCodeSent = 'verify_new_code_sent';
-  static const verifySentTo = 'verify_sent_to';
-  static const verifyLoginCodeCaps = 'verify_login_code_caps';
-  static const verifySixDigitHint = 'verify_six_digit_hint';
-  static const verifyResendIn = 'verify_resend_in';
-  static const verifyResendCode = 'verify_resend_code';
-  static const verifyChangeEmail = 'verify_change_email';
-  static const applicantCodeSendFailed = 'applicant_code_send_failed';
-  static const applicantConfirmEmail = 'applicant_confirm_email';
-  static const applicantConfirmBody = 'applicant_confirm_body';
-  static const applicantCheckTitle = 'applicant_check_title';
-  static const applicantCheckBody = 'applicant_check_body';
-  static const applicantSendCode = 'applicant_send_code';
-  static const applicantUseAppliedEmail = 'applicant_use_applied_email';
   static const gateVerifyFailed = 'gate_verify_failed';
   static const gateNoSellerAccess = 'gate_no_seller_access';
   static const gateNoSellerAccessBody = 'gate_no_seller_access_body';
@@ -479,27 +269,24 @@ abstract class TKeys {
   static const productImageRequired = 'product_image_required';
   static const productAdded = 'product_added';
   static const nothingToSend = 'nothing_to_send';
-  static const awaitingApproval = 'awaiting_approval';
   static const addProductFirst = 'add_product_first';
   static const sendToQueueTitle = 'send_to_queue_title';
-  static const sendToQueueBody = 'send_to_queue_body';
-  static const sendToQueueBodySkipped = 'send_to_queue_body_skipped';
-  static const productIs = 'product_is';
-  static const productsAre = 'products_are';
   static const couldNotSendProducts = 'could_not_send_products';
   static const pleaseTryAgain = 'please_try_again';
   static const sentToQueue = 'sent_to_queue';
-  static const queuedFor = 'queued_for';
-  static const queuedForSkipped = 'queued_for_skipped';
   static const sendToLiveBody = 'send_to_live_body';
   static const sendToLiveUnknownNote = 'send_to_live_unknown_note';
   static const sentToLiveUnits = 'sent_to_live_units';
   static const sentToLiveUnknown = 'sent_to_live_unknown';
   static const sentToLiveNotQueued = 'sent_to_live_not_queued';
   static const scanQuantityNow = 'scan_quantity_now';
+  static const alreadyScannedTitle = 'already_scanned_title';
+  static const alreadyScannedNote = 'already_scanned_note';
+  static const alreadyScannedNoteNoStream = 'already_scanned_note_no_stream';
+  static const alreadyScannedThisProduct = 'already_scanned_this_product';
+  static const alreadyScannedAnotherSeller = 'already_scanned_another_seller';
   static const removeSentProductBody = 'remove_sent_product_body';
   static const allSentToLive = 'all_sent_to_live';
-  static const inStockNow = 'in_stock_now';
   static const removeProductTitle = 'remove_product_title';
   static const removeProductBody = 'remove_product_body';
   static const removedTitle = 'removed_title';
@@ -526,7 +313,6 @@ abstract class TKeys {
   static const quickView = 'quick_view';
   static const noDescription = 'no_description';
   static const cameraSource = 'camera_source';
-  static const reportImageRequired = 'report_image_required';
   static const reportReasonOrImage = 'report_reason_or_image';
   static const gallerySource = 'gallery_source';
   static const unsupportedFile = 'unsupported_file';
@@ -537,7 +323,6 @@ abstract class TKeys {
   static const colorLabel = 'color_label';
   static const pictureLabel = 'picture_label';
   static const otherLabel = 'other_label';
-  static const describeDiscrepancyError = 'describe_discrepancy_error';
   static const reportUpdated = 'report_updated';
   static const couldNotUpdateReport = 'could_not_update_report';
   static const colorColon = 'color_colon';
@@ -546,7 +331,6 @@ abstract class TKeys {
   static const reportDiscrepancyBody = 'report_discrepancy_body';
   static const wrongProductImageCaps = 'wrong_product_image_caps';
   static const uploadPhysicalImages = 'upload_physical_images';
-  static const suggestedPrice = 'suggested_price';
   static const veilPris = 'veil_pris';
   static const describeDiscrepancy = 'describe_discrepancy';
   static const uploadImagesCaps = 'upload_images_caps';
@@ -554,14 +338,11 @@ abstract class TKeys {
   static const updateReport = 'update_report';
   static const seeFullProduct = 'see_full_product';
   static const enterUpcLabel = 'enter_upc_label';
-  static const thrownLabel = 'thrown_label';
   static const addUpcManually = 'add_upc_manually';
   static const addUpcManuallyBody = 'add_upc_manually_body';
   static const enterUpcNumber = 'enter_upc_number';
   static const scanAndAddProduct = 'scan_and_add_product';
   static const useCameraToScan = 'use_camera_to_scan';
-  static const upcPrefix = 'upc_prefix';
-  static const qtyPrefix = 'qty_prefix';
 
   // ── Products: edit ──
   static const secGeneral = 'sec_general';
@@ -594,11 +375,8 @@ abstract class TKeys {
   static const discardAction = 'discard_action';
   static const editProduct = 'edit_product';
   static const editLoggedNote = 'edit_logged_note';
-  static const editPartialLoadNote = 'edit_partial_load_note';
   static const fieldNameRequired = 'field_name_required';
   static const fieldBrand = 'field_brand';
-  static const fieldGender = 'field_gender';
-  static const selectAction = 'select_action';
   static const fieldTaxonomy = 'field_taxonomy';
   static const fieldTaxonomyHelp = 'field_taxonomy_help';
   static const fieldShortDescription = 'field_short_description';
@@ -606,19 +384,13 @@ abstract class TKeys {
   static const fieldImages = 'field_images';
   static const savingReplacesGallery = 'saving_replaces_gallery';
   static const bottomPriceHelp = 'bottom_price_help';
-  static const usePlatformShipping = 'use_platform_shipping';
-  static const shippingPriceNok = 'shipping_price_nok';
   static const weightHelp = 'weight_help';
   static const fieldPrimaryColour = 'field_primary_colour';
-  static const fieldColoursAvailable = 'field_colours_available';
-  static const noColoursSelected = 'no_colours_selected';
-  static const chooseAction = 'choose_action';
   static const fieldTags = 'field_tags';
   static const addTagHint = 'add_tag_hint';
   static const fieldMaterial = 'field_material';
   static const fieldSizing = 'field_sizing';
   static const fieldSize = 'field_size';
-  static const fieldSizeType = 'field_size_type';
   static const fieldUsSize = 'field_us_size';
   static const fieldEuSize = 'field_eu_size';
   static const fieldSizesAvailable = 'field_sizes_available';
@@ -634,8 +406,6 @@ abstract class TKeys {
   static const saveChangesCount = 'save_changes_count';
   static const addAction = 'add_action';
   static const selectedCount = 'selected_count';
-  static const searchColours = 'search_colours';
-  static const noMatchingColours = 'no_matching_colours';
   static const doneAction = 'done_action';
   static const reasonRequired = 'reason_required';
   static const describeChange = 'describe_change';
@@ -705,7 +475,6 @@ abstract class TKeys {
   static const sellerCount = 'seller_count';
   static const sellersCount = 'sellers_count';
   static const notStated = 'not_stated';
-  static const pricePointCaps = 'price_point_caps';
   static const shippingPerOrder = 'shipping_per_order';
   static const freeShippingAt = 'free_shipping_at';
   static const shippingSettings = 'shipping_settings';
@@ -728,6 +497,15 @@ abstract class TKeys {
   static const shippingStandardSuffix = 'shipping_standard_suffix';
   static const saveShipping = 'save_shipping';
   static const couldNotUpdateShipping = 'could_not_update_shipping';
+
+  // Catalog SKU (product-request quick view)
+  static const catalogSkuCaps = 'catalog_sku_caps';
+  static const catalogSkuBody = 'catalog_sku_body';
+  static const catalogSkuHint = 'catalog_sku_hint';
+  static const saveSku = 'save_sku';
+  static const skuSavedValue = 'sku_saved_value';
+  static const skuSaved = 'sku_saved';
+  static const couldNotSaveSku = 'could_not_save_sku';
   static const referralLink = 'referral_link';
   static const openAction = 'open_action';
   static const copyAction = 'copy_action';
@@ -742,7 +520,6 @@ abstract class TKeys {
   static const scrollForMore = 'scroll_for_more';
   static const searchProducts = 'search_products';
   static const filterByStatus = 'filter_by_status';
-  static const viewAction = 'view_action';
   static const filterAll = 'filter_all';
   static const filterReserved = 'filter_reserved';
 
@@ -963,9 +740,6 @@ abstract class TKeys {
   static const saNoOrders = 'sa_no_orders';
   static const saRetrieved = 'sa_retrieved';
   static const saGeneratedByServer = 'sa_generated_by_server';
-  static const saHourShort = 'sa_hour_short';
-  static const saMinuteShort = 'sa_minute_short';
-  static const saSecondShort = 'sa_second_short';
   static const saBidsCount = 'sa_bids_count';
   static const saProduct = 'sa_product';
   static const saStartPrice = 'sa_start_price';
@@ -1089,7 +863,6 @@ abstract class TKeys {
   static const ntUnarchiveAllBody = 'nt_unarchive_all_body';
   static const ntAllUnarchived = 'nt_all_unarchived';
   static const ntMovedToInbox = 'nt_moved_to_inbox';
-  static const ntSelect = 'nt_select';
   static const ntSelectedCount = 'nt_selected_count';
   static const ntSelectAll = 'nt_select_all';
   static const ntSelectionMoved = 'nt_selection_moved';
@@ -1100,7 +873,6 @@ abstract class TKeys {
   // ── Edit profile ──
   static const epRequired = 'ep_required';
   static const epDisplayNameEmpty = 'ep_display_name_empty';
-  static const epBusinessNameEmpty = 'ep_business_name_empty';
   static const epProfileUpdated = 'ep_profile_updated';
   static const epCouldNotUpdate = 'ep_could_not_update';
   static const epEditProfile = 'ep_edit_profile';
@@ -1141,8 +913,6 @@ abstract class TKeys {
   static const stSomethingWentWrong = 'st_something_went_wrong';
   static const stCouldNotUploadNamed = 'st_could_not_upload_named';
   static const stAddImage = 'st_add_image';
-  static const stTakeAPhoto = 'st_take_a_photo';
-  static const stChooseFromGallery = 'st_choose_from_gallery';
   static const stEnterQuantityOne = 'st_enter_quantity_one';
   static const stQuantity = 'st_quantity';
   static const stEnterQuantity = 'st_enter_quantity';
@@ -1161,9 +931,6 @@ abstract class TKeys {
   static const stByUpcOrTag = 'st_by_upc_or_tag';
   static const stNewSku = 'st_new_sku';
   static const stCreateABin = 'st_create_a_bin';
-  static const stFindASku = 'st_find_a_sku';
-  static const stFindASkuBody = 'st_find_a_sku_body';
-  static const stSearchSkuShort = 'st_search_sku_short';
   static const stNoMatchingTags = 'st_no_matching_tags';
   static const stEnterOrScanUpc = 'st_enter_or_scan_upc';
   static const stTypeUpcHint = 'st_type_upc_hint';
@@ -1227,8 +994,6 @@ abstract class TKeys {
   static const stAssignProductBody = 'st_assign_product_body';
   static const stProductsInSkuCaps = 'st_products_in_sku_caps';
   static const stSkuCodeCaps = 'st_sku_code_caps';
-  static const stProductCountCaps = 'st_product_count_caps';
-  static const stProductCountCapsMany = 'st_product_count_caps_many';
   static const stPrimaryCountCaps = 'st_primary_count_caps';
   static const stSkuTagsCaps = 'st_sku_tags_caps';
   static const stNoTags = 'st_no_tags';
@@ -1255,10 +1020,6 @@ abstract class TKeys {
   static const stCreateSku = 'st_create_sku';
   static const stSearchTagsShort = 'st_search_tags_short';
   static const stNewTag = 'st_new_tag';
-  static const stNewSkuTagCaps = 'st_new_sku_tag_caps';
-  static const stLabelCaps = 'st_label_caps';
-  static const stTagExample = 'st_tag_example';
-  static const stAddSkuTag = 'st_add_sku_tag';
   static const stLoadingDetails = 'st_loading_details';
   static const stQuantityColon = 'st_quantity_colon';
   static const stUpcColon = 'st_upc_colon';
@@ -1276,7 +1037,6 @@ abstract class TKeys {
   static const msOnlyImageTypes = 'ms_only_image_types';
   static const msTooLarge = 'ms_too_large';
   static const msMaxFiveMb = 'ms_max_five_mb';
-  static const msEnterValueFor = 'ms_enter_value_for';
   static const msEnterValidCm = 'ms_enter_valid_cm';
   static const msMeasurementsSaved = 'ms_measurements_saved';
   static const msSkuScope = 'ms_sku_scope';
@@ -1303,31 +1063,13 @@ abstract class TKeys {
   static const scDone = 'sc_done';
   static const scQrCode = 'sc_qr_code';
   static const scBarcode = 'sc_barcode';
-  static const siDeleteItemTitle = 'si_delete_item_title';
-  static const siDeleteItemBody = 'si_delete_item_body';
-  static const siScanInventory = 'si_scan_inventory';
-  static const siItemCount = 'si_item_count';
-  static const siItemCountMany = 'si_item_count_many';
-  static const siNoItemsScanned = 'si_no_items_scanned';
-  static const siTapScanBarcode = 'si_tap_scan_barcode';
-
-  // ── Scan inventory units ──
-  static const siUnitCount = 'si_unit_count';
-  static const siUnitCountMany = 'si_unit_count_many';
 
   // ── Auction room ──
   static const arLeaveRoomTitle = 'ar_leave_room_title';
-  static const arLeaveRoomBody = 'ar_leave_room_body';
   static const arLeave = 'ar_leave';
   static const arAuctionRoom = 'ar_auction_room';
-  static const arLiveCaps = 'ar_live_caps';
-  static const arTabLive = 'ar_tab_live';
-  static const arTabQueue = 'ar_tab_queue';
-  static const arTabChat = 'ar_tab_chat';
   static const arOpeningRoom = 'ar_opening_room';
   static const arPermissionTitle = 'ar_permission_title';
-  static const arPermissionSettings = 'ar_permission_settings';
-  static const arPermissionPrompt = 'ar_permission_prompt';
   static const arOpenSettings = 'ar_open_settings';
   static const arAllowAccess = 'ar_allow_access';
   static const arCouldNotOpenRoom = 'ar_could_not_open_room';
@@ -1343,27 +1085,20 @@ abstract class TKeys {
   static const ltStopLive = 'lt_stop_live';
   static const ltStartingCamera = 'lt_starting_camera';
   static const ltCameraOff = 'lt_camera_off';
-  static const ltPreviewOnly = 'lt_preview_only';
-  static const ltLiveStopped = 'lt_live_stopped';
   static const ltUnmute = 'lt_unmute';
   static const ltMute = 'lt_mute';
   static const ltFlip = 'lt_flip';
   static const ltMore = 'lt_more';
   static const ltMirror = 'lt_mirror';
-  static const ltNoAuctionRunning = 'lt_no_auction_running';
   static const ltAddProductsFirst = 'lt_add_products_first';
   static const ltAddNow = 'lt_add_now';
-  static const ltStartNextLot = 'lt_start_next_lot';
-  static const ltStartAuction = 'lt_start_auction';
   static const ltStartAuctionNow = 'lt_start_auction_now';
   static const ltShippingAmount = 'lt_shipping_amount';
   static const ltIsWinning = 'lt_is_winning';
-  static const ltGoLiveToStart = 'lt_go_live_to_start';
   static const ltStartsIn = 'lt_starts_in';
   static const ltStartsAt = 'lt_starts_at';
 
   // Show notes — the stream description buyers open from the room.
-  static const snShowNotes = 'sn_show_notes';
   static const snSubtitle = 'sn_subtitle';
   static const snEmpty = 'sn_empty';
   static const snHint = 'sn_hint';
@@ -1373,28 +1108,20 @@ abstract class TKeys {
   static const snLockedLive = 'sn_locked_live';
   static const snEmptyLive = 'sn_empty_live';
   static const ltCurrentLot = 'lt_current_lot';
-  static const ltCurrentPrice = 'lt_current_price';
-  static const ltHighestBid = 'lt_highest_bid';
   static const ltBids = 'lt_bids';
-  static const ltLeading = 'lt_leading';
   static const ltReducePrice = 'lt_reduce_price';
   static const ltEndLot = 'lt_end_lot';
   static const ltReduceDutchPrice = 'lt_reduce_dutch_price';
   static const ltCurrentColon = 'lt_current_colon';
   static const ltNewPriceKr = 'lt_new_price_kr';
   static const ltReduce = 'lt_reduce';
-  static const ltLastLot = 'lt_last_lot';
-  static const ltSoldTo = 'lt_sold_to';
-  static const ltNoWinner = 'lt_no_winner';
   static const ltTimeLeft = 'lt_time_left';
   static const ltExtend = 'lt_extend';
 
   // ── Chat tab ──
-  static const ctLiveChat = 'ct_live_chat';
   static const ctEnable = 'ct_enable';
   static const ctDisable = 'ct_disable';
   static const ctClear = 'ct_clear';
-  static const ctNoMessages = 'ct_no_messages';
   static const ctDeleteMessage = 'ct_delete_message';
   static const ctUnmuteViewer = 'ct_unmute_viewer';
 
@@ -1426,9 +1153,8 @@ abstract class TKeys {
   static const ctEnableChatTitle = 'ct_enable_chat_title';
   static const ctEnableChatBody = 'ct_enable_chat_body';
   static const ctChatOn = 'ct_chat_on';
-  static const ctYouHost = 'ct_you_host';
-  static const ctUserPrefix = 'ct_user_prefix';
   static const ctChatDisabled = 'ct_chat_disabled';
+  static const ctChatOpensWhenLive = 'ct_chat_opens_when_live';
   static const ctMessageHint = 'ct_message_hint';
 
   // ── Queue tab ──
@@ -1446,7 +1172,6 @@ abstract class TKeys {
   static const qtAddRandomProduct = 'qt_add_random_product';
   static const qtSelectAll = 'qt_select_all';
   static const qtClearAll = 'qt_clear_all';
-  static const qtNoProductsAvailable = 'qt_no_products_available';
   static const qtRandomStreamProduct = 'qt_random_stream_product';
   static const qtProductImage = 'qt_product_image';
   static const qtImageTooLarge = 'qt_image_too_large';
@@ -1456,7 +1181,6 @@ abstract class TKeys {
   static const qtStockRange = 'qt_stock_range';
   static const qtPickProductImage = 'qt_pick_product_image';
   static const qtAddedToQueue = 'qt_added_to_queue';
-  static const qtLinedUpAsRandom = 'qt_lined_up_as_random';
   static const qtCreateRandomProduct = 'qt_create_random_product';
   static const qtMysteryItem = 'qt_mystery_item';
   static const qtStock = 'qt_stock';
@@ -1471,7 +1195,6 @@ abstract class TKeys {
   static const qtTapAddProduct = 'qt_tap_add_product';
 
   // ── Orders tab & control dialog ──
-  static const otWinningOrders = 'ot_winning_orders';
   static const otOrderNumber = 'ot_order_number';
   static const otLot = 'ot_lot';
   static const otWinner = 'ot_winner';
@@ -1481,8 +1204,6 @@ abstract class TKeys {
   static const cdSecondaryDevice = 'cd_secondary_device';
   static const cdMainDeviceRequest = 'cd_main_device_request';
   static const cdAuctionControlRequest = 'cd_auction_control_request';
-  static const cdAcceptMainBody = 'cd_accept_main_body';
-  static const cdAcceptControlBody = 'cd_accept_control_body';
   static const cdAnotherDeviceMain = 'cd_another_device_main';
   static const cdAnotherDeviceControl = 'cd_another_device_control';
   static const cdDevice = 'cd_device';
@@ -1504,8 +1225,6 @@ abstract class TKeys {
   static const csSwitching = 'cs_switching';
   static const csSwitchFailed = 'cs_switch_failed';
   static const csNoCameras = 'cs_no_cameras';
-  static const csDetecting = 'cs_detecting';
-  static const csDeviceDefault = 'cs_device_default';
 
   // ── Room sheets ──
   static const rsDevicesControl = 'rs_devices_control';
@@ -1520,16 +1239,13 @@ abstract class TKeys {
   static const rsSetupPlatforms = 'rs_setup_platforms';
   static const rsRestreamToOthers = 'rs_restream_to_others';
   static const rsViewOnlyPrimary = 'rs_view_only_primary';
-  static const rsEndsAt = 'rs_ends_at';
   static const rsMinsShort = 'rs_mins_short';
   static const rsPlannedLength = 'rs_planned_length';
   static const rsWriteBannerMessage = 'rs_write_banner_message';
-  static const rsAnnouncementLiveOnly = 'rs_announcement_live_only';
   static const rsNoActiveAnnouncementDot = 'rs_no_active_announcement_dot';
   static const rsShowingToBuyers = 'rs_showing_to_buyers';
   static const rsEndingInAMinute = 'rs_ending_in_a_minute';
   static const rsEndingInMin = 'rs_ending_in_min';
-  static const rsAboutToEndBody = 'rs_about_to_end_body';
   static const rsPlusMin = 'rs_plus_min';
   static const rsNotNow = 'rs_not_now';
   static const rsEndsArrow = 'rs_ends_arrow';
@@ -1550,8 +1266,6 @@ abstract class TKeys {
   static const rsDeviceNamedRole = 'rs_device_named_role';
   static const rsControlCaps = 'rs_control_caps';
   static const rsStreamOrders = 'rs_stream_orders';
-  static const rsNoOrdersYetDot = 'rs_no_orders_yet_dot';
-  static const rsOrder = 'rs_order';
   static const rsPreBidsFor = 'rs_pre_bids_for';
   static const rsNoPreBids = 'rs_no_pre_bids';
   static const rsBack = 'rs_back';
@@ -1624,9 +1338,6 @@ abstract class TKeys {
   static const mpPlatformNeedsCamera = 'mp_platform_needs_camera';
 
   // ── Auction interpolated ──
-  static const arPlannedAt = 'ar_planned_at';
-  static const ltSoldToPrice = 'lt_sold_to_price';
-  static const ltBuyerFallback = 'lt_buyer_fallback';
   static const ltLeftEndsAt = 'lt_left_ends_at';
   static const rsUnderAMinute = 'rs_under_a_minute';
   static const rsEndsAtLeft = 'rs_ends_at_left';
@@ -1708,6 +1419,10 @@ abstract class TKeys {
   static const ltWatchingBody = 'lt_watching_body';
   static const ltSwitchingRole = 'lt_switching_role';
   static const qtQueueLocked = 'qt_queue_locked';
+  static const qtSearchQueueHint = 'qt_search_queue_hint';
+  static const qtNoQueueMatches = 'qt_no_queue_matches';
+  static const qtNoQueueMatchesBody = 'qt_no_queue_matches_body';
+  static const qtSearchReorderNote = 'qt_search_reorder_note';
   static const acControlNowYours = 'ac_control_now_yours';
   static const acControlNowElsewhere = 'ac_control_now_elsewhere';
   static const actManageQueue = 'act_manage_queue';
@@ -1722,10 +1437,8 @@ abstract class TKeys {
   static const pcFlashAuto = 'pc_flash_auto';
   static const pcFlashOn = 'pc_flash_on';
   static const pcFlashTorch = 'pc_flash_torch';
-  static const pcExposure = 'pc_exposure';
   static const pcReset = 'pc_reset';
   static const pcAeAfLock = 'pc_ae_af_lock';
-  static const pcAeAfUnlocked = 'pc_ae_af_unlocked';
   static const pcGridOn = 'pc_grid_on';
   static const pcGridOff = 'pc_grid_off';
   static const pcTimerOff = 'pc_timer_off';
@@ -1743,7 +1456,6 @@ abstract class TKeys {
   static const pcDiscard = 'pc_discard';
   static const pcKeepShooting = 'pc_keep_shooting';
   static const pcLimitReached = 'pc_limit_reached';
-  static const pcFront = 'pc_front';
   static const pcTele = 'pc_tele';
   static const pcPhotosCount = 'pc_photos_count';
   static const pcTapToFocusHint = 'pc_tap_to_focus_hint';
@@ -1785,4 +1497,214 @@ abstract class TKeys {
   static const cdControlConsequence = 'cd_control_consequence';
   static const acRequestNoLongerPending = 'ac_request_no_longer_pending';
   static const rsGiveControlBack = 'rs_give_control_back';
+
+  // Product details — size / colour / defect sections
+  static const sizeAndColour = 'size_and_colour';
+  static const fieldSizeFilter = 'field_size_filter';
+  static const fieldSizeType = 'field_size_type';
+  static const sizeSpecImages = 'size_spec_images';
+  static const defectInfo = 'defect_info';
+  static const defectDescription = 'defect_description';
+
+  // Scanned-list search & paging (TW-194), held lines (TW-193)
+  static const reqSearchHint = 'req_search_hint';
+  static const reqFilterAll = 'req_filter_all';
+  static const reqFilterReady = 'req_filter_ready';
+  static const reqFilterHeld = 'req_filter_held';
+  static const reqNoSearchMatch = 'req_no_search_match';
+  static const reqNoFilterMatch = 'req_no_filter_match';
+  static const reqPageRange = 'req_page_range';
+  static const reqPageOf = 'req_page_of';
+  static const reqJumpToPage = 'req_jump_to_page';
+  static const reqHoldOpenIssue = 'req_hold_open_issue';
+  static const reqIssueAwaitingAdmin = 'req_issue_awaiting_admin';
+  static const reqIssueAwaitingAdminBody = 'req_issue_awaiting_admin_body';
+  static const reqHoldUnknownProduct = 'req_hold_unknown_product';
+  static const reqAllHeldNote = 'req_all_held_note';
+  static const reqHeldNote = 'req_held_note';
+  static const sendToLiveReadyLine = 'send_to_live_ready_line';
+  static const sendToLiveHeldIssueNote = 'send_to_live_held_issue_note';
+  static const sentToLiveHeldIssues = 'sent_to_live_held_issues';
+  static const sendConfirmTitle = 'send_confirm_title';
+  static const sendConfirmProducts = 'send_confirm_products';
+  static const sendConfirmUnits = 'send_confirm_units';
+  static const sendConfirmYes = 'send_confirm_yes';
+  static const errUnexpectedFormat = 'err_unexpected_format';
+  static const errMissingProductRef = 'err_missing_product_ref';
+  static const errMissingPlacementRef = 'err_missing_placement_ref';
+  static const errCheckProductDetails = 'err_check_product_details';
+  static const errCheckReport = 'err_check_report';
+  static const errCheckSkuDetails = 'err_check_sku_details';
+  static const errCheckQuantity = 'err_check_quantity';
+  static const errCheckProducts = 'err_check_products';
+  static const errCheckMeasurements = 'err_check_measurements';
+  static const errSkuNotFound = 'err_sku_not_found';
+  static const errPendingProductGone = 'err_pending_product_gone';
+  static const errProductNotOnSku = 'err_product_not_on_sku';
+  static const errProductNoLongerAtSku = 'err_product_no_longer_at_sku';
+  static const errProductAlreadyOnSku = 'err_product_already_on_sku';
+  static const errChooseDifferentSku = 'err_choose_different_sku';
+  static const errChooseTargetSku = 'err_choose_target_sku';
+  static const errNoProductsToSave = 'err_no_products_to_save';
+  static const errEnterQuantity = 'err_enter_quantity';
+  static const errTagExists = 'err_tag_exists';
+  static const errSkuExists = 'err_sku_exists';
+  static const errNoSkuFor = 'err_no_sku_for';
+  static const errLoadDashboard = 'err_load_dashboard';
+  static const errNoDashboardAccess = 'err_no_dashboard_access';
+  static const errLoadStats = 'err_load_stats';
+  static const errLoadSkus = 'err_load_skus';
+  static const errResolveSku = 'err_resolve_sku';
+  static const errSearchFailed = 'err_search_failed';
+  static const errSubmitReport = 'err_submit_report';
+  static const errAddProduct = 'err_add_product';
+  static const errLoadTags = 'err_load_tags';
+  static const errCreateTag = 'err_create_tag';
+  static const errCreateSku = 'err_create_sku';
+  static const errLoadNotifications = 'err_load_notifications';
+  static const errActionFailed = 'err_action_failed';
+  static const errMax100Notifications = 'err_max100_notifications';
+  static const errLoadProfile = 'err_load_profile';
+  static const errUpdateProfile = 'err_update_profile';
+  static const errUploadFailed = 'err_upload_failed';
+  static const errNoImageKey = 'err_no_image_key';
+  static const errSaveImage = 'err_save_image';
+  static const errLoadOrders = 'err_load_orders';
+  static const errLoadProducts = 'err_load_products';
+  static const errEditReasonRequired = 'err_edit_reason_required';
+  static const errTooManyEdits = 'err_too_many_edits';
+  static const errSaveChanges = 'err_save_changes';
+  static const errLoadSku = 'err_load_sku';
+  static const errLoadPendingProducts = 'err_load_pending_products';
+  static const errUpdateProduct = 'err_update_product';
+  static const errRemoveProduct = 'err_remove_product';
+  static const errUpdateSku = 'err_update_sku';
+  static const errSaveProducts = 'err_save_products';
+  static const errSaveProduct = 'err_save_product';
+  static const errMoveProduct = 'err_move_product';
+  static const errLoadStreams = 'err_load_streams';
+  static const errNoCategories = 'err_no_categories';
+  static const errLoadCategories = 'err_load_categories';
+  static const errThumbUploadCode = 'err_thumb_upload_code';
+  static const errThumbUpload = 'err_thumb_upload';
+  static const errCreateStream = 'err_create_stream';
+  static const errUpdateStream = 'err_update_stream';
+  static const errDeleteStream = 'err_delete_stream';
+  static const errAlreadySending = 'err_already_sending';
+  static const errSelectStreamFirst = 'err_select_stream_first';
+  static const errAddProductFirst = 'err_add_product_first';
+  static const errAllWaitingAdmin = 'err_all_waiting_admin';
+  static const errSendToLive = 'err_send_to_live';
+  static const errDeleteProductCode = 'err_delete_product_code';
+  static const errDeleteProduct = 'err_delete_product';
+  static const errLoadProductRequests = 'err_load_product_requests';
+  static const errImageUploadCode = 'err_image_upload_code';
+  static const errImageUpload = 'err_image_upload';
+  static const errImageUploadRetry = 'err_image_upload_retry';
+  static const errAddMessageOrPhoto = 'err_add_message_or_photo';
+  static const errUpdateReport = 'err_update_report';
+  static const errUpdateShipping = 'err_update_shipping';
+  static const errSaveSku = 'err_save_sku';
+  static const errMissingStreamOrProduct = 'err_missing_stream_or_product';
+  static const errAddOnePhoto = 'err_add_one_photo';
+  static const errUpdateQuantity = 'err_update_quantity';
+  static const errLoadProductRequest = 'err_load_product_request';
+  static const errSaveMeasurements = 'err_save_measurements';
+  static const errRemoveMeasurement = 'err_remove_measurement';
+  static const errPhotoTooLarge = 'err_photo_too_large';
+  static const errUploadPhoto = 'err_upload_photo';
+  static const errSavePhotos = 'err_save_photos';
+  static const errMeasurementUnsupported = 'err_measurement_unsupported';
+  static const errMeasurementsManagedOnly = 'err_measurements_managed_only';
+  static const errProductGone = 'err_product_gone';
+  static const errTooManyAttemptsWait = 'err_too_many_attempts_wait';
+  static const errOpenRoom = 'err_open_room';
+  static const errChatNoUser = 'err_chat_no_user';
+  static const errChatConnect = 'err_chat_connect';
+  static const chatYou = 'chat_you';
+  static const arUserMuted = 'ar_user_muted';
+  static const arRandomOutOfStock = 'ar_random_out_of_stock';
+  static const errGoLive = 'err_go_live';
+  static const arStreamExtended = 'ar_stream_extended';
+  static const arAnnouncementLive = 'ar_announcement_live';
+  static const arAnnouncementEnded = 'ar_announcement_ended';
+  static const snCleared = 'sn_cleared';
+  static const snUpdated = 'sn_updated';
+  static const errCreateProduct = 'err_create_product';
+  static const errCreatedNotQueued = 'err_created_not_queued';
+  static const productFallback = 'product_fallback';
+  static const errNoControl = 'err_no_control';
+  static const errSessionExpiredRetry = 'err_session_expired_retry';
+  static const errStreamEnded = 'err_stream_ended';
+  static const errTooManyRequests = 'err_too_many_requests';
+  static const mpErrMustBeLive = 'mp_err_must_be_live';
+  static const mpErrPrimaryStart = 'mp_err_primary_start';
+  static const mpErrAddDestination = 'mp_err_add_destination';
+  static const mpErrConnecting = 'mp_err_connecting';
+  static const mpErrPrimaryChange = 'mp_err_primary_change';
+  static const mpStarted = 'mp_started';
+  static const mpErrPrimaryStop = 'mp_err_primary_stop';
+  static const mpStopped = 'mp_stopped';
+  static const mpErrSignIn = 'mp_err_sign_in';
+  static const mpErrSessionExpired = 'mp_err_session_expired';
+  static const mpErrTooMany = 'mp_err_too_many';
+  static const mpErrPlatform = 'mp_err_platform';
+  static const mpErrRtmpRequired = 'mp_err_rtmp_required';
+  static const mpErrYoutubeKey = 'mp_err_youtube_key';
+  static const errTimedOut = 'err_timed_out';
+  static const errRequestFailed = 'err_request_failed';
+  static const autoQuickView = 'auto_quick_view';
+  static const ltPreviewOnly = 'lt_preview_only';
+  static const ltLiveStopped = 'lt_live_stopped';
+  static const qtSelectedCount = 'qt_selected_count';
+  static const stAddSkuTag = 'st_add_sku_tag';
+  static const stTagLabelHint = 'st_tag_label_hint';
+  static const yesAction = 'yes_action';
+  static const mpPermissionBodySettings = 'mp_permission_body_settings';
+  static const mpPermissionBodyPrompt = 'mp_permission_body_prompt';
+  static const allowAction = 'allow_action';
+  static const arPermissionBodySettings = 'ar_permission_body_settings';
+  static const arPermissionBodyPrompt = 'ar_permission_body_prompt';
+  static const rsAnnouncementLiveOnly = 'rs_announcement_live_only';
+  static const rsAboutToEndBody = 'rs_about_to_end_body';
+  static const mpErrNoPublisher = 'mp_err_no_publisher';
+  static const mpStartedPartial = 'mp_started_partial';
+  static const mpStoppedCount = 'mp_stopped_count';
+  static const mpErrForbidden = 'mp_err_forbidden';
+  static const mpErrStartTimeout = 'mp_err_start_timeout';
+  static const errCreatedNotQueuedRetry = 'err_created_not_queued_retry';
+  static const qtNoProductsToAdd = 'qt_no_products_to_add';
+  static const qtRemoveFromQueueBody = 'qt_remove_from_queue_body';
+  static const mpKeyHintYoutube = 'mp_key_hint_youtube';
+  static const mpKeyHintTiktok = 'mp_key_hint_tiktok';
+  static const mpKeyHintFacebook = 'mp_key_hint_facebook';
+  static const mpKeyHintInstagram = 'mp_key_hint_instagram';
+  static const locZone = 'loc_zone';
+  static const locAisle = 'loc_aisle';
+  static const locShelf = 'loc_shelf';
+  static const monthShort1 = 'month_short_1';
+  static const monthLong1 = 'month_long_1';
+  static const monthShort2 = 'month_short_2';
+  static const monthLong2 = 'month_long_2';
+  static const monthShort3 = 'month_short_3';
+  static const monthLong3 = 'month_long_3';
+  static const monthShort4 = 'month_short_4';
+  static const monthLong4 = 'month_long_4';
+  static const monthShort5 = 'month_short_5';
+  static const monthLong5 = 'month_long_5';
+  static const monthShort6 = 'month_short_6';
+  static const monthLong6 = 'month_long_6';
+  static const monthShort7 = 'month_short_7';
+  static const monthLong7 = 'month_long_7';
+  static const monthShort8 = 'month_short_8';
+  static const monthLong8 = 'month_long_8';
+  static const monthShort9 = 'month_short_9';
+  static const monthLong9 = 'month_long_9';
+  static const monthShort10 = 'month_short_10';
+  static const monthLong10 = 'month_long_10';
+  static const monthShort11 = 'month_short_11';
+  static const monthLong11 = 'month_long_11';
+  static const monthShort12 = 'month_short_12';
+  static const monthLong12 = 'month_long_12';
+  static const websiteLabel = 'website_label';
 }

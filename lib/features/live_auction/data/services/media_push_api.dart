@@ -122,9 +122,8 @@ class MediaPushApi {
         throw AuctionApiException(
           code: 'TIMEOUT',
           message: method == 'POST'
-              ? 'Starting Media Push took too long. Check the destinations '
-                  'below before trying again — some may already be live.'
-              : 'The request timed out. Please try again.',
+              ? TKeys.mpErrStartTimeout.tr
+              : TKeys.errTimedOut.tr,
         );
       };
 
@@ -148,7 +147,7 @@ class MediaPushApi {
       throw AuctionApiException(
         code: (err is Map ? err['code'] : null) as String? ?? 'INTERNAL_ERROR',
         message: (err is Map ? err['message'] : null) as String? ??
-            'Request failed (${res.statusCode}).',
+            TKeys.errRequestFailed.trParams({'code': '${res.statusCode}'}),
         statusCode: res.statusCode,
       );
     }

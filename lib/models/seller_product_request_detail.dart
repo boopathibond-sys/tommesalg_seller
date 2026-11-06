@@ -25,11 +25,13 @@ class SellerProductRequestDetail {
     final raw = (json['items'] as List?)?.isNotEmpty == true
         ? json['items'] as List
         : (json['composeItems'] as List? ?? const []);
+    // Kept in the server's order — newest scan first, the same order the
+    // web and the Assign-to-live list show. Re-sorting by `sortOrder` here
+    // flipped it back to oldest first.
     final items = raw
         .whereType<Map<String, dynamic>>()
         .map(RequestLineItem.fromJson)
-        .toList()
-      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        .toList();
     final notes = (json['adminNotes'] as String?)?.trim();
     return SellerProductRequestDetail(
       id: json['id'] as String? ?? '',
@@ -49,12 +51,16 @@ class RequestLineItem {
     required this.quantityRequested,
     required this.reservedQuantity,
     required this.pendingQuantity,
+    this.newScanQuantity,
+    this.confirmedQuantity,
+    this.streamRemainingQuantity,
     required this.defectQuantity,
     required this.lineStatus,
     required this.isUnknownUpc,
     this.requestedUpc,
     this.requestedName,
     this.productName,
+    this.holdReason,
     this.brand,
     this.imageUrl,
     this.veilPris,
@@ -62,17 +68,43 @@ class RequestLineItem {
   });
 
   final String id;
+  /// The line's running total across submits and sales — not "what is left".
   final int quantityRequested;
   final int reservedQuantity;
   final int pendingQuantity;
+
+  /// Scanned in this draft and not confirmed yet. Null on an older backend.
+  final int? newScanQuantity;
+
+  /// Already confirmed into the shared stock. Null on an older backend.
+  final int? confirmedQuantity;
+
+  /// Still sellable on this stream right now; null for unknown-UPC lines and
+  /// products that aren't stock-managed.
+  final int? streamRemainingQuantity;
   final int defectQuantity;
 
-  /// e.g. PENDING_STOCK, FULFILLED.
+  /// New scans, falling back to `quantityRequested − reservedQuantity`.
+  int get newScanUnits {
+    final fresh = newScanQuantity;
+    if (fresh != null) return fresh;
+    final unsent = quantityRequested - reservedQuantity;
+    return unsent > 0 ? unsent : 0;
+  }
+
+  int get confirmedUnits => confirmedQuantity ?? reservedQuantity;
+
+  /// DRAFT, RESERVED (= confirmed), PENDING_UNKNOWN, CANCELLED, or the legacy
+  /// PENDING_STOCK.
   final String lineStatus;
   final bool isUnknownUpc;
   final String? requestedUpc;
   final String? requestedName;
   final String? productName;
+
+  /// TW-193: `UNKNOWN_PRODUCT` / `OPEN_ISSUE` while the line waits in draft
+  /// for the admin; null when not held or on older servers.
+  final String? holdReason;
   final String? brand;
   final String? imageUrl;
   final num? veilPris;
@@ -86,7 +118,10 @@ class RequestLineItem {
     return null;
   }
 
-  static int _int(dynamic v) => (v as num?)?.toInt() ?? 0;
+  static int _int(dynamic v) => _intOrNull(v) ?? 0;
+
+  static int? _intOrNull(dynamic v) =>
+      v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
 
   static String? _text(dynamic v) {
     final s = (v as String?)?.trim();
@@ -107,12 +142,16 @@ class RequestLineItem {
       quantityRequested: _int(json['quantityRequested']),
       reservedQuantity: _int(json['reservedQuantity']),
       pendingQuantity: _int(json['pendingQuantity']),
+      newScanQuantity: _intOrNull(json['newScanQuantity']),
+      confirmedQuantity: _intOrNull(json['confirmedQuantity']),
+      streamRemainingQuantity: _intOrNull(json['streamRemainingQuantity']),
       defectQuantity: _int(json['defectQuantity']),
       lineStatus: (json['lineStatus'] as String? ?? '').toUpperCase(),
       isUnknownUpc: json['isUnknownUpc'] == true,
       requestedUpc: _text(json['requestedUpc']),
       requestedName: _text(json['requestedName']),
       productName: _text(product['name']),
+      holdReason: _text(json['holdReason'])?.toUpperCase(),
       brand: _text(product['brand']),
       imageUrl: _text(product['thumbnailUrl']) ??
           _text(product['image']) ??

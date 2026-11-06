@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer';
+import '../core/localization/translation_keys.dart';
 
 import 'package:get/get.dart';
 
@@ -163,11 +164,11 @@ class NotificationController extends GetxController {
 
       if (_isFeatureDisabled(response.statusCode, body)) return false;
       _errorMessage.value =
-          _messageIn(body) ?? 'Failed to load notifications (HTTP ${response.statusCode}).';
+          _messageIn(body) ?? TKeys.errLoadNotifications.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Notifications fetch error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      _errorMessage.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isLoading.value     = false;
@@ -421,7 +422,7 @@ class NotificationController extends GetxController {
       if (!response.isSuccess || body is! Map || body['success'] != true) {
         if (_isFeatureDisabled(response.statusCode, body)) return null;
         _errorMessage.value =
-            _messageIn(body) ?? 'That action could not be completed.';
+            _messageIn(body) ?? TKeys.errActionFailed.tr;
         return null;
       }
 
@@ -443,7 +444,7 @@ class NotificationController extends GetxController {
       );
     } catch (e) {
       log('Notifications archived-ids fetch error: $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      _errorMessage.value = TKeys.svcNetworkError.tr;
       return null;
     }
   }
@@ -504,7 +505,7 @@ class NotificationController extends GetxController {
   }) async {
     if (ids.isEmpty) return true;
     if (ids.length > 100) {
-      _errorMessage.value = 'Select at most 100 notifications at a time.';
+      _errorMessage.value = TKeys.errMax100Notifications.tr;
       return false;
     }
     if (_isMutating.value) return false;
@@ -587,11 +588,11 @@ class NotificationController extends GetxController {
       }
       if (_isFeatureDisabled(response.statusCode, decoded)) return false;
       _errorMessage.value =
-          _messageIn(decoded) ?? 'That action could not be completed.';
+          _messageIn(decoded) ?? TKeys.errActionFailed.tr;
       return false;
     } catch (e) {
       log('Notifications mutate error ($path): $e');
-      _errorMessage.value = 'Network error. Please try again.';
+      _errorMessage.value = TKeys.svcNetworkError.tr;
       return false;
     }
   }

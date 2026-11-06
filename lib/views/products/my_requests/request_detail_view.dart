@@ -312,6 +312,11 @@ class _ItemCard extends StatelessWidget {
   final RequestLineItem item;
 
   String _lineStatus(String s) => switch (s) {
+        'DRAFT' => TKeys.reqStatusDraft.tr,
+        // RESERVED is the historical name for "confirmed into stock".
+        'RESERVED' => TKeys.reqQtyConfirmed.tr,
+        'PENDING_UNKNOWN' => TKeys.reqLinePendingUnknown.tr,
+        // Legacy — no longer produced; rendered neutrally like the rest.
         'PENDING_STOCK' => TKeys.reqLinePendingStock.tr,
         'FULFILLED' => TKeys.reqStatusFulfilled.tr,
         'CANCELLED' => TKeys.reqStatusCancelled.tr,
@@ -396,6 +401,29 @@ class _ItemCard extends StatelessWidget {
                           ),
                       ],
                     ),
+                    // TW-193: held lines go to the auction on their own once
+                    // the admin resolves them — say so instead of a bare DRAFT.
+                    if (it.holdReason != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.hourglass_top_rounded,
+                              size: 12, color: Colors.orange.shade800),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: CustomText(
+                              it.holdReason == 'OPEN_ISSUE'
+                                  ? TKeys.reqHoldOpenIssue.tr
+                                  : TKeys.reqHoldUnknownProduct.tr,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.orange.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -421,9 +449,14 @@ class _ItemCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              _Qty(label: TKeys.reqQtyRequested.tr, value: it.quantityRequested),
-              _Qty(label: TKeys.reqQtyReserved.tr, value: it.reservedQuantity),
-              _Qty(label: TKeys.reqQtyPending.tr, value: it.pendingQuantity),
+              // `quantityRequested` is a running total, so the guide's
+              // per-line numbers are shown instead.
+              _Qty(label: TKeys.reqQtyNewScan.tr, value: it.newScanUnits),
+              _Qty(label: TKeys.reqQtyConfirmed.tr, value: it.confirmedUnits),
+              _Qty(
+                label: TKeys.reqQtyLeftOnStream.tr,
+                value: it.streamRemainingQuantity,
+              ),
               _Qty(
                 label: TKeys.reqQtyDefect.tr,
                 value: it.defectQuantity,
@@ -441,7 +474,9 @@ class _Qty extends StatelessWidget {
   const _Qty({required this.label, required this.value, this.warn = false});
 
   final String label;
-  final int value;
+
+  /// Null shows "—" (e.g. no stream stock for an unknown-UPC line).
+  final int? value;
   final bool warn;
 
   @override
@@ -457,7 +492,7 @@ class _Qty extends StatelessWidget {
         child: Column(
           children: [
             CustomText(
-              '$value',
+              value == null ? '—' : '$value',
               fontSize: 13.5,
               fontWeight: FontWeight.w800,
               color: warn ? Colors.red : AppColors.textPrimary,

@@ -73,7 +73,7 @@ class ChatModerationApi {
       throw AuctionApiException(
         code: (err is Map ? err['code'] : null) as String? ?? 'INTERNAL_ERROR',
         message: (err is Map ? err['message'] : null) as String? ??
-            'Request failed (${res.statusCode}).',
+            TKeys.errRequestFailed.trParams({'code': '${res.statusCode}'}),
         statusCode: res.statusCode,
       );
     }

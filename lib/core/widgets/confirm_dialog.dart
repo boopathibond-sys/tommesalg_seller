@@ -1,4 +1,6 @@
+import 'package:get/get.dart';
 import 'package:flutter/material.dart';
+import '../localization/translation_keys.dart';
 
 import '../theme/app_colors.dart';
 import 'custom_text.dart';
@@ -21,13 +23,15 @@ Future<bool> showConfirmDialog({
   required BuildContext context,
   required String title,
   required String message,
-  String confirmLabel = 'Yes',
-  String cancelLabel  = 'Cancel',
+  String? confirmLabel,
+  String? cancelLabel,
   IconData icon       = Icons.help_outline_rounded,
   bool barrierDismissible = true,
   bool destructive = true,
 }) async
 {
+  final yesLabel = confirmLabel ?? TKeys.yesAction.tr;
+  final noLabel = cancelLabel ?? TKeys.cancelAction.tr;
   // Quiet grey pill vs. filled blue CTA — which label wears which depends on
   // whether the confirm action is the risky one.
   final accent = destructive ? AppColors.vipps : AppColors.primaryBlue;
@@ -96,7 +100,7 @@ Future<bool> showConfirmDialog({
                 // Whichever action is the *quiet* one goes first: the confirm
                 // when it's destructive, otherwise Cancel.
                 _DialogAction(
-                  label: destructive ? confirmLabel : cancelLabel,
+                  label: destructive ? yesLabel : noLabel,
                   onTap: () =>
                       Navigator.of(dialogCtx).pop(destructive ? true : false),
                   background: AppColors.inputFill,
@@ -105,7 +109,7 @@ Future<bool> showConfirmDialog({
                 ),
                 // …and the filled blue CTA with its soft shadow goes second.
                 _DialogAction(
-                  label: destructive ? cancelLabel : confirmLabel,
+                  label: destructive ? noLabel : yesLabel,
                   onTap: () =>
                       Navigator.of(dialogCtx).pop(destructive ? false : true),
                   background: AppColors.primaryBlue,

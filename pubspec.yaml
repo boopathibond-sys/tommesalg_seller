@@ -73,6 +73,7 @@ dependencies:
   flutter_image_compress: ^2.5.1   # Shrinks photos before upload (report + measurement images)
   wakelock_plus: ^1.8.0
   app_links: ^6.3.2          # Google / Apple sign-in return link (Android) + cold start
+  package_info_plus: ^10.2.2
 
 dev_dependencies:
   flutter_test:
@@ -115,10 +116,8 @@ flutter:
     - assets/translations/nb.json
     - assets/logo/app_icon.png
     - assets/logo/app_loading.png
-    # The Show Notes tab: the supplied assets/logo/show_note_icon.png (palette
-    # PNG on flat white) with that white keyed to transparency and trimmed, so
-    # the note composites over live video instead of sitting in a white box.
-    # The original stays in the repo as the source art and is not shipped.
+    # The Show Notes tab: transparent and trimmed, so the note composites
+    # over live video instead of sitting in a white box.
     - assets/logo/show_notes_tab.png
 
   # To add custom fonts to your application, add a fonts section here,

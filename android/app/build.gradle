@@ -47,8 +47,8 @@ android {
         targetSdkVersion 36
         // Set manually here (not driven by pubspec.yaml). Edit these directly
         // for each release.
-        versionCode 13
-        versionName "1.1.3"
+        versionCode 15
+        versionName "1.1.5"
     }
 
     signingConfigs {

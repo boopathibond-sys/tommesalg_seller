@@ -15,7 +15,12 @@ class ProductDefect {
     this.images = const [],
     this.description = '',
     this.quantity = 0,
+    this.sku,
   });
+
+  /// Product-level catalog SKU from the same preview payload (`sku`), so the
+  /// quick view can prefill its SKU field without a second request.
+  final String? sku;
 
   final List<String> images;
   final String description;
@@ -34,6 +39,9 @@ class ProductDefect {
           .toList(),
       description: (json['defectDescription'] as String?)?.trim() ?? '',
       quantity: q is num ? q.toInt() : int.tryParse('${q ?? ''}') ?? 0,
+      sku: (json['sku'] as String?)?.trim().isNotEmpty == true
+          ? (json['sku'] as String).trim()
+          : null,
     );
   }
 }

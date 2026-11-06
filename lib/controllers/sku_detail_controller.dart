@@ -1,4 +1,5 @@
 import 'dart:developer';
+import '../core/localization/translation_keys.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
@@ -97,15 +98,15 @@ class SkuDetailController extends GetxController {
           );
           return true;
         }
-        _detailError.value = 'Unexpected response format.';
+        _detailError.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
-      _detailError.value = 'Failed to load SKU: ${response.statusCode}';
+      _detailError.value = TKeys.errLoadSku.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('SKU detail fetch error: $e');
-      _detailError.value = 'Network error. Please try again.';
+      _detailError.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isLoadingDetail.value = false;
@@ -133,16 +134,16 @@ class SkuDetailController extends GetxController {
               .toList();
           return true;
         }
-        _placementsError.value = 'Unexpected response format.';
+        _placementsError.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
       _placementsError.value =
-          'Failed to load products: ${response.statusCode}';
+          TKeys.errLoadProducts.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('SKU placements fetch error: $e');
-      _placementsError.value = 'Network error. Please try again.';
+      _placementsError.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isLoadingPlacements.value = false;
@@ -214,16 +215,16 @@ class SkuDetailController extends GetxController {
               .toList();
           return true;
         }
-        _pendingError.value = 'Unexpected response format.';
+        _pendingError.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
       _pendingError.value =
-          'Failed to load pending products: ${response.statusCode}';
+          TKeys.errLoadPendingProducts.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Pending-unknown fetch error: $e');
-      _pendingError.value = 'Network error. Please try again.';
+      _pendingError.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isLoadingPending.value = false;
@@ -242,7 +243,7 @@ class SkuDetailController extends GetxController {
     required int quantity,
     required List<String> imageUrls,
   }) async {
-    if (itemId.isEmpty) return 'Missing product reference.';
+    if (itemId.isEmpty) return TKeys.errMissingProductRef.tr;
 
     _isSaving.value = true;
 
@@ -264,22 +265,22 @@ class SkuDetailController extends GetxController {
           await fetchPendingUnknown();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 404) {
-        return 'This pending product no longer exists.';
+        return TKeys.errPendingProductGone.tr;
       }
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the product details and try again.';
+        return TKeys.errCheckProductDetails.tr;
       }
-      return 'Failed to update product: ${response.statusCode}';
+      return TKeys.errUpdateProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Pending-unknown update error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -289,7 +290,7 @@ class SkuDetailController extends GetxController {
   /// `DELETE /locations/{id}/pending-unknown/{itemId}`. Returns an error
   /// message on failure, or `null` on success (after refreshing the list).
   Future<String?> deletePendingUnknown(String itemId) async {
-    if (itemId.isEmpty) return 'Missing product reference.';
+    if (itemId.isEmpty) return TKeys.errMissingProductRef.tr;
 
     _isSaving.value = true;
 
@@ -305,19 +306,19 @@ class SkuDetailController extends GetxController {
           await fetchPendingUnknown();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 404) {
-        return 'This pending product no longer exists.';
+        return TKeys.errPendingProductGone.tr;
       }
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
-      return 'Failed to remove product: ${response.statusCode}';
+      return TKeys.errRemoveProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Pending-unknown delete error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -363,20 +364,20 @@ class SkuDetailController extends GetxController {
           await fetchDetail();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the SKU details and try again.';
+        return TKeys.errCheckSkuDetails.tr;
       }
 
-      return 'Failed to update SKU: ${response.statusCode}';
+      return TKeys.errUpdateSku.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('SKU update error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -387,7 +388,7 @@ class SkuDetailController extends GetxController {
   /// (guide §5.4) — the Overview "Save all" action. Returns an error message
   /// on failure, or `null` on success (after refreshing the product list).
   Future<String?> saveAllPlacements() async {
-    if (_placements.isEmpty) return 'No products to save.';
+    if (_placements.isEmpty) return TKeys.errNoProductsToSave.tr;
 
     _isSaving.value = true;
 
@@ -417,17 +418,17 @@ class SkuDetailController extends GetxController {
           await fetchPlacements();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 422) {
-        return 'Please check the products and try again.';
+        return TKeys.errCheckProducts.tr;
       }
 
-      return 'Failed to save products: ${response.statusCode}';
+      return TKeys.errSaveProducts.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Placements save-all error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -469,17 +470,17 @@ class SkuDetailController extends GetxController {
           await fetchPlacements();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 422) {
-        return 'Please check the quantity and try again.';
+        return TKeys.errCheckQuantity.tr;
       }
 
-      return 'Failed to save product: ${response.statusCode}';
+      return TKeys.errSaveProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Placement save error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -496,8 +497,8 @@ class SkuDetailController extends GetxController {
     required int addQuantity,
     required bool isPrimary,
   }) async {
-    if (productId.isEmpty) return 'Missing product reference.';
-    if (addQuantity <= 0) return 'Enter a quantity of 1 or more to add.';
+    if (productId.isEmpty) return TKeys.errMissingProductRef.tr;
+    if (addQuantity <= 0) return TKeys.errEnterQuantity.tr;
 
     _isSaving.value = true;
 
@@ -520,23 +521,23 @@ class SkuDetailController extends GetxController {
           await fetchPlacements();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 404) {
-        return 'Product is no longer assigned to this SKU.';
+        return TKeys.errProductNotOnSku.tr;
       }
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the quantity and try again.';
+        return TKeys.errCheckQuantity.tr;
       }
 
-      return 'Failed to update product: ${response.statusCode}';
+      return TKeys.errUpdateProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Placement increment error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -547,7 +548,7 @@ class SkuDetailController extends GetxController {
   /// Returns an error message on failure, or `null` on success (after
   /// refreshing the product list).
   Future<String?> deletePlacement(String placementId) async {
-    if (placementId.isEmpty) return 'Missing placement reference.';
+    if (placementId.isEmpty) return TKeys.errMissingPlacementRef.tr;
 
     _isSaving.value = true;
 
@@ -564,20 +565,20 @@ class SkuDetailController extends GetxController {
           await fetchPlacements();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 404) {
-        return 'Product is no longer assigned to this SKU.';
+        return TKeys.errProductNotOnSku.tr;
       }
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
 
-      return 'Failed to remove product: ${response.statusCode}';
+      return TKeys.errRemoveProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Placement delete error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -626,8 +627,8 @@ class SkuDetailController extends GetxController {
     required String placementId,
     required String targetLocationId,
   }) async {
-    if (placementId.isEmpty) return 'Missing placement reference.';
-    if (targetLocationId.isEmpty) return 'Please choose a target SKU.';
+    if (placementId.isEmpty) return TKeys.errMissingPlacementRef.tr;
+    if (targetLocationId.isEmpty) return TKeys.errChooseTargetSku.tr;
 
     _isSaving.value = true;
 
@@ -651,7 +652,7 @@ class SkuDetailController extends GetxController {
           _placements.removeWhere((p) => p.placementId == placementId);
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       // Prefer what the API says — e.g. a 409 CONFLICT carries
@@ -661,22 +662,22 @@ class SkuDetailController extends GetxController {
       if (apiMessage != null) return apiMessage;
 
       if (response.statusCode == 404) {
-        return 'This product is no longer at this SKU.';
+        return TKeys.errProductNoLongerAtSku.tr;
       }
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 409) {
-        return 'This product is already assigned to that SKU.';
+        return TKeys.errProductAlreadyOnSku.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please choose a different target SKU.';
+        return TKeys.errChooseDifferentSku.tr;
       }
 
-      return 'Failed to move product: ${response.statusCode}';
+      return TKeys.errMoveProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Placement move error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }
@@ -789,7 +790,7 @@ class SkuDetailController extends GetxController {
     List<String> imageKeys = const [],
     String? locationId,
   }) async {
-    if (productId.isEmpty) return 'Missing product reference.';
+    if (productId.isEmpty) return TKeys.errMissingProductRef.tr;
 
     _isSaving.value = true;
 
@@ -813,19 +814,19 @@ class SkuDetailController extends GetxController {
       if (response.isSuccess) {
         final json = response.json;
         if (json['success'] == true) return null;
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the report and try again.';
+        return TKeys.errCheckReport.tr;
       }
-      return 'Failed to submit report: ${response.statusCode}';
+      return TKeys.errSubmitReport.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('[product-issue] submit error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isSaving.value = false;
     }

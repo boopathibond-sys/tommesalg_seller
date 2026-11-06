@@ -68,9 +68,48 @@ class QueuePage extends StatelessWidget {
 /// The Queue tab: ordered product list with add / remove / reorder / clear.
 /// Mutations are snapshot-authoritative — a spinner shows while the server
 /// applies the change; no optimistic reordering.
-class QueueTab extends StatelessWidget {
+class QueueTab extends StatefulWidget {
   const QueueTab({super.key, required this.ctrl});
   final AuctionRoomController ctrl;
+
+  @override
+  State<QueueTab> createState() => _QueueTabState();
+}
+
+class _QueueTabState extends State<QueueTab> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  AuctionRoomController get ctrl => widget.ctrl;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    _searchCtrl.clear();
+    setState(() => _query = '');
+  }
+
+  /// Case-insensitive match on every term of the query against the product's
+  /// name, brand, categories, barcode (snapshot or queue catalog) and id, so
+  /// "nike 42" finds a Nike lot whose barcode or name contains 42.
+  bool _matches(AuctionProduct p, List<String> terms, Map<String, String> catalogUpc) {
+    final haystack = [
+      p.title,
+      p.brand,
+      p.category,
+      p.subCategory,
+      p.mainCategory,
+      p.parentCategory,
+      p.subItem,
+      p.upc ?? catalogUpc[p.productId],
+      p.productId,
+    ].whereType<String>().join(' ').toLowerCase();
+    return terms.every(haystack.contains);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +118,13 @@ class QueueTab extends StatelessWidget {
         Column(
           children: [
             _QueueActions(ctrl: ctrl),
+            Obx(() => ctrl.queueView.isEmpty
+                ? const SizedBox.shrink()
+                : _QueueSearchField(
+                    controller: _searchCtrl,
+                    onChanged: (v) => setState(() => _query = v),
+                    onClear: _clearSearch,
+                  )),
             Expanded(
               child: Obx(() {
                 final canManage = ctrl.canManageQueue;
@@ -87,6 +133,54 @@ class QueueTab extends StatelessWidget {
                 // counts — the item builder runs outside this tracking scope.
                 final unitsLeft = ctrl.unitsLeftByProduct;
                 if (queue.isEmpty) return _EmptyQueue(canManage: canManage);
+
+                final terms = _query
+                    .trim()
+                    .toLowerCase()
+                    .split(RegExp(r'\s+'))
+                    .where((t) => t.isNotEmpty)
+                    .toList();
+                if (terms.isNotEmpty) {
+                  final catalogUpc = <String, String>{
+                    for (final c in ctrl.catalogProducts)
+                      if (c.upc != null) c.productId: c.upc!,
+                  };
+                  // Keep each lot's real queue position so the number badge
+                  // still says where it sits in the auction order.
+                  final hits = <int>[
+                    for (var i = 0; i < queue.length; i++)
+                      if (_matches(queue[i], terms, catalogUpc)) i,
+                  ];
+                  if (hits.isEmpty) {
+                    return _NoQueueMatches(
+                        query: _query.trim(), onClear: _clearSearch);
+                  }
+                  // Reordering a filtered view would map indices onto the
+                  // wrong lots, so dragging is off while a search is active.
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    physics: const BouncingScrollPhysics(),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: hits.length + (canManage ? 1 : 0),
+                    itemBuilder: (_, j) {
+                      if (canManage && j == 0) {
+                        return const _SearchReorderNote();
+                      }
+                      final i = hits[j - (canManage ? 1 : 0)];
+                      return _QueueRow(
+                        key: ValueKey(queue[i].productId),
+                        ctrl: ctrl,
+                        product: queue[i],
+                        unitsLeft: unitsLeft[queue[i].productId] ??
+                            queue[i].stockCount,
+                        index: i,
+                        canDrag: false,
+                      );
+                    },
+                  );
+                }
+
                 // Drag-to-reorder: grab the handle on the left and drop the lot
                 // wherever you want; the position is persisted on release.
                 return ReorderableListView.builder(
@@ -235,7 +329,7 @@ Future<void> _confirmRemove(
   final ok = await showConfirmDialog(
     context: context,
     title: TKeys.qtRemoveFromQueue.tr,
-    message: '"${product.title}" will be taken out of this stream\'s queue.',
+    message: TKeys.qtRemoveFromQueueBody.trParams({'title': product.title}),
     confirmLabel: TKeys.removeAction.tr,
     icon: Icons.remove_shopping_cart_outlined,
   );
@@ -299,6 +393,18 @@ class _QueueRow extends StatelessWidget {
     showQueueProductQuickView(context, product, upc: upc);
   }
 
+  /// The snapshot's `image` can be a bare storage key (or an expired presigned
+  /// URL), which `Image.network` can't load. Prefer a loadable URL from the
+  /// snapshot, else the queue catalog's freshly presigned one.
+  String? get _thumbnail {
+    final gallery = product.gallery;
+    if (gallery.isNotEmpty) return gallery.first;
+    for (final c in ctrl.catalogProducts) {
+      if (c.productId == product.productId) return c.displayImage;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Reorder / remove need only a live session, not auction control (§2).
@@ -349,8 +455,8 @@ class _QueueRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             child: Container(
               width: 46, height: 46, color: AppColors.inputFill,
-              child: product.image != null
-                  ? Image.network(product.image!, fit: BoxFit.cover,
+              child: _thumbnail != null
+                  ? Image.network(_thumbnail!, fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) =>
                           const Icon(Icons.image_outlined, color: AppColors.textMuted))
                   : const Icon(Icons.shopping_bag_outlined, color: AppColors.textMuted),
@@ -571,7 +677,7 @@ class _CatalogSheetState extends State<_CatalogSheet> {
                         ),
                       ],
                       const Spacer(),
-                      CustomText('${_selected.length} selected',
+                      CustomText(TKeys.qtSelectedCount.trParams({'count': '${_selected.length}'}),
                           fontSize: 11.5, fontWeight: FontWeight.w700,
                           color: AppColors.textSecondary),
                     ],
@@ -588,12 +694,11 @@ class _CatalogSheetState extends State<_CatalogSheet> {
                   }
                   final products = ctrl.catalogProducts;
                   if (products.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Padding(
-                        padding: EdgeInsets.all(24),
+                        padding: const EdgeInsets.all(24),
                         child: CustomText(
-                          'No products available to add. Prepare products for '
-                          'this stream first.',
+                          TKeys.qtNoProductsToAdd.tr,
                           fontSize: 13, fontWeight: FontWeight.w500,
                           textAlign: TextAlign.center, color: AppColors.textSecondary,
                         ),
@@ -1390,6 +1495,144 @@ class _EmptyQueue extends StatelessWidget {
                 canManage ? TKeys.qtTapAddProduct.tr : TKeys.qtQueueLocked.tr,
                 fontSize: 13, fontWeight: FontWeight.w500,
                 textAlign: TextAlign.center, color: AppColors.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Filters the queue as the seller types. Matching is client-side over the
+/// already-loaded snapshot, so it works instantly and offline from the API.
+class _QueueSearchField extends StatelessWidget {
+  const _QueueSearchField({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    const border = OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(12)),
+      borderSide: BorderSide(color: AppColors.inputBorder),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        onSubmitted: (_) => FocusScope.of(context).unfocus(),
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+        ),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: TKeys.qtSearchQueueHint.tr,
+          hintStyle: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textMuted,
+          ),
+          prefixIcon: const Icon(Icons.search_rounded,
+              size: 20, color: AppColors.textMuted),
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (_, value, __) => value.text.isEmpty
+                ? const SizedBox.shrink()
+                : IconButton(
+                    onPressed: () {
+                      onClear();
+                      FocusScope.of(context).unfocus();
+                    },
+                    icon: const Icon(Icons.close_rounded,
+                        size: 18, color: AppColors.textMuted),
+                  ),
+          ),
+          filled: true,
+          fillColor: AppColors.white,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: border,
+          enabledBorder: border,
+          focusedBorder: const OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            borderSide: BorderSide(color: AppColors.brandNavy, width: 1.4),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Explains why the drag handles vanish while a search is active.
+class _SearchReorderNote extends StatelessWidget {
+  const _SearchReorderNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, left: 2),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded,
+              size: 15, color: AppColors.textMuted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: CustomText(TKeys.qtSearchReorderNote.tr,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoQueueMatches extends StatelessWidget {
+  const _NoQueueMatches({required this.query, required this.onClear});
+
+  final String query;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off_rounded,
+                size: 40, color: AppColors.textMuted),
+            const SizedBox(height: 12),
+            CustomText(TKeys.qtNoQueueMatches.tr,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary),
+            const SizedBox(height: 4),
+            CustomText(
+                TKeys.qtNoQueueMatchesBody.trParams({'query': query}),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                textAlign: TextAlign.center,
+                color: AppColors.textSecondary),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: onClear,
+              child: CustomText(TKeys.ctClear.tr,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.brandNavy),
+            ),
           ],
         ),
       ),

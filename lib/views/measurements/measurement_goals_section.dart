@@ -9,6 +9,7 @@ import '../../core/services/measurement_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/image_compressor.dart';
 import '../../core/widgets/custom_text.dart';
+import '../../core/widgets/zoomable_image_viewer.dart';
 import '../../core/widgets/image_source_picker.dart';
 import '../../models/measurement.dart';
 import '../../core/localization/translation_keys.dart';
@@ -1133,6 +1134,18 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
     );
   }
 
+  /// Local paths / signed URLs of every photo that can actually be rendered —
+  /// key-only photos (no URL yet) are left out of the zoom viewer.
+  List<String> _viewablePhotoSources() => [
+        for (final p in _photos)
+          if (p.localPath != null)
+            p.localPath!
+          else if (p.url != null && p.url!.startsWith('http'))
+            p.url!
+          else if (p.key.startsWith('http'))
+            p.key,
+      ];
+
   /// One thumb — the local file while the seller is still on this dialog, the
   /// signed URL once it comes back from the server, and a named placeholder
   /// when all we hold is an S3 key.
@@ -1178,10 +1191,23 @@ class _MeasurementGoalsSectionState extends State<MeasurementGoalsSection> {
       image = _photoPlaceholder(photo);
     }
 
+    final viewable = _viewablePhotoSources();
+    final source = photo.localPath ?? url;
     return Stack(
       key: ValueKey(photo.key),
       children: [
-        ClipRRect(borderRadius: BorderRadius.circular(12), child: image),
+        // Tap → large, zoomable view of every photo that can be shown.
+        GestureDetector(
+          onTap: source == null
+              ? null
+              : () => showZoomableImages(
+                    context,
+                    images: viewable,
+                    initialIndex: viewable.indexOf(source),
+                  ),
+          child:
+              ClipRRect(borderRadius: BorderRadius.circular(12), child: image),
+        ),
         if (removable)
           Positioned(
             top: 4,

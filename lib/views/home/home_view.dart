@@ -33,9 +33,8 @@ import '../notifications/notifications_view.dart';
 import '../orders/orders_view.dart';
 import '../products/manage_products/manage_products_view.dart';
 import '../profile/edit_profile_view.dart';
-// import '../scanner/barcode_scanner_view.dart';
-// import '../scan_inventory/scan_inventory_view.dart';
-import '../stock/stock_view.dart';
+// Stock screen is parked, not deleted — re-enable with its tab.
+// import '../stock/stock_view.dart';
 import '../stream/create_stream_view.dart';
 import '../stream/stream_list_view.dart';
 import 'package:tommesalg_seller_app/core/utils/app_snackbar.dart';
@@ -52,9 +51,9 @@ class _HomeViewState extends State<HomeView> {
   int _index = 0;
   // final List<Barcode> _scanned = [];
 
-  final _profileCtrl    = getOrPut(() => ProfileController());
+  final _profileCtrl = getOrPut(() => ProfileController());
   final _streamListCtrl = getOrPut(() => StreamListController());
-  final _dashboardCtrl  = getOrPut(() => DashboardController());
+  final _dashboardCtrl = getOrPut(() => DashboardController());
   // Permanent: the bell badge has to survive tab switches and the inbox screen
   // being popped, and the same instance backs both.
   final _notificationCtrl =
@@ -65,14 +64,14 @@ class _HomeViewState extends State<HomeView> {
   // here. It resolves in `_TabSpec.label` at paint time, which is also what
   // makes the bar re-label itself when the seller switches language.
   static const _tabs = <_TabSpec>[
-    _TabSpec(icon: Icons.home_rounded,        labelKey: TKeys.navHome),
-    _TabSpec(icon: Icons.connected_tv_outlined,     labelKey: TKeys.navStreams),
+    _TabSpec(icon: Icons.home_rounded, labelKey: TKeys.navHome),
+    _TabSpec(icon: Icons.connected_tv_outlined, labelKey: TKeys.navStreams),
     // Center tab: the "Assign to live" screen (product requests for a stream).
-    _TabSpec(icon: Icons.live_tv_outlined,    labelKey: TKeys.navRequests),
+    _TabSpec(icon: Icons.live_tv_outlined, labelKey: TKeys.navRequests),
     // Products is now just the seller's own catalog ("My Products").
-    _TabSpec(icon: Icons.shopping_bag_outlined,   labelKey: TKeys.navProducts),
+    _TabSpec(icon: Icons.shopping_bag_outlined, labelKey: TKeys.navProducts),
     // _TabSpec(icon: Icons.inventory_2_rounded, labelKey: TKeys.navStock),
-    _TabSpec(icon: Icons.person_rounded,      labelKey: TKeys.navProfile),
+    _TabSpec(icon: Icons.person_rounded, labelKey: TKeys.navProfile),
   ];
 
   @override
@@ -209,25 +208,27 @@ class _HomeViewState extends State<HomeView> {
                     top: false,
                     bottom: false,
                     child: IndexedStack(
-            index: _index,
-            children: [
-              _HomeTab(
-                profileCtrl: _profileCtrl,
-                notificationCtrl: _notificationCtrl,
-                dashboardCtrl: _dashboardCtrl,
-                onCreateSku: () => _goToStockSkus(create: true),
-                onEditSku: () => _goToStockSkus(),
-                onSeeProducts: _goToMyProducts,
-                onCreateShipment: _createShipment,
-                onConfigureStreams: _goToStreams,
-              ),
-              const StreamListView(),
-              // const ManageProductView(),
-              const ManageProductView(section: ProductsSection.assignToLive),
-              const ManageProductView(section: ProductsSection.myProducts),
-              // const StockView(),
-              _ProfileTab(profileCtrl: _profileCtrl),
-            ],
+                      index: _index,
+                      children: [
+                        _HomeTab(
+                          profileCtrl: _profileCtrl,
+                          notificationCtrl: _notificationCtrl,
+                          dashboardCtrl: _dashboardCtrl,
+                          onCreateSku: () => _goToStockSkus(create: true),
+                          onEditSku: () => _goToStockSkus(),
+                          onSeeProducts: _goToMyProducts,
+                          onCreateShipment: _createShipment,
+                          onConfigureStreams: _goToStreams,
+                        ),
+                        const StreamListView(),
+                        // const ManageProductView(),
+                        const ManageProductView(
+                            section: ProductsSection.assignToLive),
+                        const ManageProductView(
+                            section: ProductsSection.myProducts),
+                        // const StockView(),
+                        _ProfileTab(profileCtrl: _profileCtrl),
+                      ],
                     ),
                   ),
                 ),
@@ -237,12 +238,17 @@ class _HomeViewState extends State<HomeView> {
         ),
         bottomNavigationBar: _BottomBar(
           index: _index,
-          tabs:  _tabs,
+          tabs: _tabs,
           onTap: (i) {
-            if (i == 1) {
+            if (i == 0) {
+              // Home tab: re-sync the dashboard counters (planned / live
+              // streams, orders …) in the background so they never show
+              // numbers from before a change made on another tab.
+              _dashboardCtrl.refreshSoon();
+            } else if (i == 1) {
               // Streams tab: reload from the API every time it's opened.
               _streamListCtrl.fetchStreams(refresh: true);
-            }else if(i==2){
+            } else if (i == 2) {
               // Requests tab → "Assign to live": re-sync the scheduled streams
               // in the background on every tap, so a stream created or edited
               // elsewhere shows up in the dropdown. Silent on purpose — no
@@ -275,7 +281,7 @@ class _HomeViewState extends State<HomeView> {
 class _TabSpec {
   const _TabSpec({required this.icon, required this.labelKey});
   final IconData icon;
-  final String   labelKey;
+  final String labelKey;
 
   /// Resolved on read so a language switch re-labels the bar.
   String get label => labelKey.tr;
@@ -457,133 +463,133 @@ class _HomeTab extends StatelessWidget {
         // or a white band shows under the last card.
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: ColoredBox(
-            color: _canvas,
-            child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Navy hero — identity, the day's headline numbers and the one
-            // action sellers open this app to take.
-            _HomeHero(
-              name: name,
-              initial: initial,
-              avatarUrl: avatarUrl,
-              notificationCtrl: notificationCtrl,
-              dashboardCtrl: dashboardCtrl,
-              onCreateShipment: onCreateShipment,
-              onConfigureStreams: onConfigureStreams,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
             ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: ColoredBox(
+                color: _canvas,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Navy hero — identity, the day's headline numbers and the one
+                    // action sellers open this app to take.
+                    _HomeHero(
+                      name: name,
+                      initial: initial,
+                      avatarUrl: avatarUrl,
+                      notificationCtrl: notificationCtrl,
+                      dashboardCtrl: dashboardCtrl,
+                      onCreateShipment: onCreateShipment,
+                      onConfigureStreams: onConfigureStreams,
+                    ),
 
-            const SizedBox(height: 24),
+                    const SizedBox(height: 24),
 
-            // Store overview for the selected month, from
-            // GET /api/v1/seller/dashboard.
-            _DashboardSection(controller: dashboardCtrl),
+                    // Store overview for the selected month, from
+                    // GET /api/v1/seller/dashboard.
+                    _DashboardSection(controller: dashboardCtrl),
 
-            const SizedBox(height: 26),
+                    const SizedBox(height: 26),
 
-            // Quick actions — shortcuts into products, streams and the
-            // warehouse SKU flow.
-            _QuickActions(
-              onCreateSku: onCreateSku,
-              onEditSku: onEditSku,
-              onSeeProducts: onSeeProducts,
-              onConfigureStreams: onConfigureStreams,
-            ),
+                    // Quick actions — shortcuts into products, streams and the
+                    // warehouse SKU flow.
+                    _QuickActions(
+                      onCreateSku: onCreateSku,
+                      onEditSku: onEditSku,
+                      onSeeProducts: onSeeProducts,
+                      onConfigureStreams: onConfigureStreams,
+                    ),
 
-            const SizedBox(height: 10),
+                    const SizedBox(height: 10),
 
-            // Scan inventory entry point
-            // Padding(
-            //   padding: const EdgeInsets.symmetric(horizontal: 20),
-            //   child: GestureDetector(
-            //     onTap: () => Navigator.of(context).push(
-            //       MaterialPageRoute(
-            //         builder: (_) => const ScanInventoryView(),
-            //       ),
-            //     ),
-            //     child: Container(
-            //       width: double.infinity,
-            //       padding: const EdgeInsets.all(16),
-            //       decoration: BoxDecoration(
-            //         color: AppColors.white,
-            //         borderRadius: BorderRadius.circular(16),
-            //         border: Border.all(color: AppColors.borderGrey, width: 1),
-            //         boxShadow: [
-            //           BoxShadow(
-            //             color: AppColors.brandNavy.withOpacity(0.04),
-            //             blurRadius: 16,
-            //             offset: const Offset(0, 4),
-            //           ),
-            //         ],
-            //       ),
-            //       child: Row(
-            //         children: [
-            //           Container(
-            //             width: 44,
-            //             height: 44,
-            //             decoration: BoxDecoration(
-            //               color: AppColors.accent.withOpacity(0.18),
-            //               borderRadius: BorderRadius.circular(12),
-            //             ),
-            //             child: const Icon(
-            //               Icons.qr_code_scanner_rounded,
-            //               size: 22,
-            //               color: AppColors.brandNavy,
-            //             ),
-            //           ),
-            //           const SizedBox(width: 12),
-            //           const Expanded(
-            //             child: Column(
-            //               crossAxisAlignment: CrossAxisAlignment.start,
-            //               children: [
-            //                 CustomText(
-            //                   'Scan inventory',
-            //                   fontSize: 15,
-            //                   fontWeight: FontWeight.w800,
-            //                   color: AppColors.textPrimary,
-            //                 ),
-            //                 SizedBox(height: 2),
-            //                 CustomText(
-            //                   'Scan barcodes to build your product list',
-            //                   fontSize: 12,
-            //                   fontWeight: FontWeight.w500,
-            //                   color: AppColors.textSecondary,
-            //                 ),
-            //               ],
-            //             ),
-            //           ),
-            //           const Icon(
-            //             Icons.chevron_right_rounded,
-            //             color: AppColors.textMuted,
-            //           ),
-            //         ],
-            //       ),
-            //     ),
-            //   ),
-            // ),
+                    // Scan inventory entry point
+                    // Padding(
+                    //   padding: const EdgeInsets.symmetric(horizontal: 20),
+                    //   child: GestureDetector(
+                    //     onTap: () => Navigator.of(context).push(
+                    //       MaterialPageRoute(
+                    //         builder: (_) => const ScanInventoryView(),
+                    //       ),
+                    //     ),
+                    //     child: Container(
+                    //       width: double.infinity,
+                    //       padding: const EdgeInsets.all(16),
+                    //       decoration: BoxDecoration(
+                    //         color: AppColors.white,
+                    //         borderRadius: BorderRadius.circular(16),
+                    //         border: Border.all(color: AppColors.borderGrey, width: 1),
+                    //         boxShadow: [
+                    //           BoxShadow(
+                    //             color: AppColors.brandNavy.withOpacity(0.04),
+                    //             blurRadius: 16,
+                    //             offset: const Offset(0, 4),
+                    //           ),
+                    //         ],
+                    //       ),
+                    //       child: Row(
+                    //         children: [
+                    //           Container(
+                    //             width: 44,
+                    //             height: 44,
+                    //             decoration: BoxDecoration(
+                    //               color: AppColors.accent.withOpacity(0.18),
+                    //               borderRadius: BorderRadius.circular(12),
+                    //             ),
+                    //             child: const Icon(
+                    //               Icons.qr_code_scanner_rounded,
+                    //               size: 22,
+                    //               color: AppColors.brandNavy,
+                    //             ),
+                    //           ),
+                    //           const SizedBox(width: 12),
+                    //           const Expanded(
+                    //             child: Column(
+                    //               crossAxisAlignment: CrossAxisAlignment.start,
+                    //               children: [
+                    //                 CustomText(
+                    //                   'Scan inventory',
+                    //                   fontSize: 15,
+                    //                   fontWeight: FontWeight.w800,
+                    //                   color: AppColors.textPrimary,
+                    //                 ),
+                    //                 SizedBox(height: 2),
+                    //                 CustomText(
+                    //                   'Scan barcodes to build your product list',
+                    //                   fontSize: 12,
+                    //                   fontWeight: FontWeight.w500,
+                    //                   color: AppColors.textSecondary,
+                    //                 ),
+                    //               ],
+                    //             ),
+                    //           ),
+                    //           const Icon(
+                    //             Icons.chevron_right_rounded,
+                    //             color: AppColors.textMuted,
+                    //           ),
+                    //         ],
+                    //       ),
+                    //     ),
+                    //   ),
+                    // ),
 
-            const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-            // What you can do — overview of the app's selling features.
-            const _FeaturesSection(),
+                    // What you can do — overview of the app's selling features.
+                    const _FeaturesSection(),
 
-            const SizedBox(height: 26),
+                    const SizedBox(height: 26),
 
-            // About the app
-            const _AboutCard(),
+                    // About the app
+                    const _AboutCard(),
 
-            const SizedBox(height: 36),
-          ],
+                    const SizedBox(height: 36),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-        ),
         ),
       );
     });
@@ -665,8 +671,9 @@ class _HomeHero extends StatelessWidget {
                         child: CircleAvatar(
                           radius: 21,
                           backgroundColor: const Color(0xFF2A3B52),
-                          backgroundImage:
-                              avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+                          backgroundImage: avatarUrl != null
+                              ? NetworkImage(avatarUrl!)
+                              : null,
                           child: avatarUrl == null
                               ? CustomText(
                                   initial,
@@ -724,7 +731,7 @@ class _HomeHero extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     height: 1.45,
-                    color: Color(0x99FFFFFF),
+                    color: const Color(0x99FFFFFF),
                   ),
                   const SizedBox(height: 20),
                   Row(
@@ -756,13 +763,6 @@ class _HomeHero extends StatelessWidget {
                               label: TKeys.liveNow.tr,
                               value: '${stats.liveStreams}',
                               highlight: stats.liveStreams > 0,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _HeroStatChip(
-                              label: TKeys.planned.tr,
-                              value: '${stats.scheduledStreams}',
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -1162,7 +1162,6 @@ class _TapCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         boxShadow: _cardShadow,
-
       ),
       child: Material(
         color: AppColors.white,
@@ -1365,7 +1364,8 @@ class _DashboardSection extends StatelessWidget {
                         tone: _Tone.coral,
                         label: TKeys.shipmentsLabel.tr,
                         value: '${data.stats.totalStreams}',
-                        caption: '${data.stats.liveStreams} ${TKeys.liveLower.tr} · '
+                        caption:
+                            '${data.stats.liveStreams} ${TKeys.liveLower.tr} · '
                             '${data.stats.scheduledStreams} ${TKeys.plannedLower.tr}'
                             '${monthLong.isEmpty ? '' : ' ${TKeys.inMonth.tr} $monthLong'}',
                       ),
@@ -1384,7 +1384,8 @@ class _DashboardSection extends StatelessWidget {
                         tone: _Tone.blue,
                         label: TKeys.ordersLabel.tr,
                         value: '${data.stats.totalOrders}',
-                        caption: '${data.stats.paidOrders} ${TKeys.completedPayments.tr}'
+                        caption:
+                            '${data.stats.paidOrders} ${TKeys.completedPayments.tr}'
                             '${monthLong.isEmpty ? '' : ' ${TKeys.inMonth.tr} $monthLong'}',
                       ),
                     ),
@@ -1396,7 +1397,9 @@ class _DashboardSection extends StatelessWidget {
                         label: TKeys.turnoverLabel.tr,
                         value: _formatMoney(data.stats.revenue),
                         caption: TKeys.paidSalesVolume.tr +
-                            (monthLong.isEmpty ? '' : ' ${TKeys.inMonth.tr} $monthLong'),
+                            (monthLong.isEmpty
+                                ? ''
+                                : ' ${TKeys.inMonth.tr} $monthLong'),
                       ),
                     ),
                   ],
@@ -1600,7 +1603,9 @@ class _MonthPicker extends StatelessWidget {
               ),
             const SizedBox(width: 7),
             CustomText(
-              selected.isEmpty ? TKeys.periodLabel.tr : formatYearMonth(selected),
+              selected.isEmpty
+                  ? TKeys.periodLabel.tr
+                  : formatYearMonth(selected),
               fontSize: 13,
               fontWeight: FontWeight.w800,
               color: AppColors.brandNavy,
@@ -1871,7 +1876,9 @@ class _ProductStatusCard extends StatelessWidget {
                 child: _MetricLine(
                   label: TKeys.availableLabel.tr,
                   value: '${stats.availableProducts}',
-                  unit: total == 1 ? TKeys.productUnitSingular.tr : TKeys.productUnitPlural.tr,
+                  unit: total == 1
+                      ? TKeys.productUnitSingular.tr
+                      : TKeys.productUnitPlural.tr,
                 ),
               ),
               Expanded(
@@ -1956,31 +1963,31 @@ class _FeaturesSection extends StatelessWidget {
   // A getter, not a `static const` list: `.tr` has to re-run whenever the
   // seller switches language.
   static List<_FeatureSpec> get _features => <_FeatureSpec>[
-    _FeatureSpec(
-      icon: Icons.live_tv_outlined,
-      tone: _Tone.coral,
-      title: TKeys.goLive.tr,
-      subtitle: TKeys.goLiveSub.tr,
-    ),
-    _FeatureSpec(
-      icon: Icons.connected_tv_outlined,
-      tone: _Tone.blue,
-      title: TKeys.planYourStreams.tr,
-      subtitle: TKeys.planYourStreamsSub.tr,
-    ),
-    _FeatureSpec(
-      icon: Icons.inventory_2_rounded,
-      tone: _Tone.green,
-      title: TKeys.manageYourStock.tr,
-      subtitle: TKeys.manageYourStockSub.tr,
-    ),
-    _FeatureSpec(
-      icon: Icons.shopping_bag_rounded,
-      tone: _Tone.violet,
-      title: TKeys.buildYourCatalog.tr,
-      subtitle: TKeys.buildYourCatalogSub.tr,
-    ),
-  ];
+        _FeatureSpec(
+          icon: Icons.live_tv_outlined,
+          tone: _Tone.coral,
+          title: TKeys.goLive.tr,
+          subtitle: TKeys.goLiveSub.tr,
+        ),
+        _FeatureSpec(
+          icon: Icons.connected_tv_outlined,
+          tone: _Tone.blue,
+          title: TKeys.planYourStreams.tr,
+          subtitle: TKeys.planYourStreamsSub.tr,
+        ),
+        _FeatureSpec(
+          icon: Icons.inventory_2_rounded,
+          tone: _Tone.green,
+          title: TKeys.manageYourStock.tr,
+          subtitle: TKeys.manageYourStockSub.tr,
+        ),
+        _FeatureSpec(
+          icon: Icons.shopping_bag_rounded,
+          tone: _Tone.violet,
+          title: TKeys.buildYourCatalog.tr,
+          subtitle: TKeys.buildYourCatalogSub.tr,
+        ),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -2179,7 +2186,8 @@ class _HomeError extends StatelessWidget {
                 color: AppColors.vipps.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(Icons.wifi_off_rounded, size: 28, color: AppColors.vipps),
+              child: const Icon(Icons.wifi_off_rounded,
+                  size: 28, color: AppColors.vipps),
             ),
             const SizedBox(height: 16),
             CustomText(
@@ -2201,7 +2209,8 @@ class _HomeError extends StatelessWidget {
             GestureDetector(
               onTap: () => profileCtrl.fetchProfile(),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
                 decoration: BoxDecoration(
                   color: AppColors.brandNavy,
                   borderRadius: BorderRadius.circular(12),
@@ -2249,7 +2258,8 @@ class _ProfileTab extends StatelessWidget {
                     color: AppColors.vipps.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Icon(Icons.wifi_off_rounded, size: 28, color: AppColors.vipps),
+                  child: const Icon(Icons.wifi_off_rounded,
+                      size: 28, color: AppColors.vipps),
                 ),
                 const SizedBox(height: 16),
                 CustomText(
@@ -2271,7 +2281,8 @@ class _ProfileTab extends StatelessWidget {
                 GestureDetector(
                   onTap: () => profileCtrl.fetchProfile(),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 28, vertical: 12),
                     decoration: BoxDecoration(
                       color: AppColors.brandNavy,
                       borderRadius: BorderRadius.circular(12),
@@ -2309,188 +2320,189 @@ class _ProfileContent extends StatelessWidget {
     return BrandedRefreshIndicator(
       onRefresh: () => profileCtrl.fetchProfile(silent: true),
       child: SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(
-        parent: BouncingScrollPhysics(),
-      ),
-      child: Column(
-        children: [
-          _ProfileHeader(profile: profile, profileCtrl: profileCtrl),
-          // The header already ends flush with the bottom of the avatar, so
-          // this is pure breathing room — 56 left the name floating a whole
-          // avatar's width away from the face it belongs to.
-          const SizedBox(height: 14),
-          // Name + business
-          CustomText(
-            profile.displayName,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.4,
-            color: AppColors.textPrimary,
-          ),
-          const SizedBox(height: 3),
-          CustomText(
-            profile.businessName,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textSecondary,
-          ),
-          const SizedBox(height: 10),
-          // Badges row
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (profile.verified) _buildBadge(
-                Icons.check_circle_rounded,
-                TKeys.verifiedLabel.tr,
-                const Color(0xFF2E7D32),
-              ),
-              if (profile.verified) const SizedBox(width: 8),
-              _buildStatusBadge(profile.approvalStatus),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Cards
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        child: Column(
+          children: [
+            _ProfileHeader(profile: profile, profileCtrl: profileCtrl),
+            // The header already ends flush with the bottom of the avatar, so
+            // this is pure breathing room — 56 left the name floating a whole
+            // avatar's width away from the face it belongs to.
+            const SizedBox(height: 14),
+            // Name + business
+            CustomText(
+              profile.displayName,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+              color: AppColors.textPrimary,
+            ),
+            const SizedBox(height: 3),
+            CustomText(
+              profile.businessName,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+            const SizedBox(height: 10),
+            // Badges row
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Quick stats row
-                _QuickStats(profile: profile),
-                const SizedBox(height: 16),
+                if (profile.verified)
+                  _buildBadge(
+                    Icons.check_circle_rounded,
+                    TKeys.verifiedLabel.tr,
+                    const Color(0xFF2E7D32),
+                  ),
+                if (profile.verified) const SizedBox(width: 8),
+                _buildStatusBadge(profile.approvalStatus),
+              ],
+            ),
+            const SizedBox(height: 24),
 
-                // Profile card thumbnail (editable)
-                _CardThumbnailSection(
-                  profile: profile,
-                  profileCtrl: profileCtrl,
-                ),
-                const SizedBox(height: 16),
-
-                // Contact details
-                _SectionCard(
-                  title: TKeys.contactInformation.tr,
-                  icon: Icons.contact_mail_rounded,
-                  children: [
-                    _DetailTile(
-                      icon: Icons.mail_outline_rounded,
-                      title: TKeys.emailLabel.tr,
-                      subtitle: profile.email,
-                    ),
-                    _DetailTile(
-                      icon: Icons.phone_outlined,
-                      title: TKeys.phoneLabel.tr,
-                      subtitle: profile.phone,
-                    ),
-                  ],
-                ),
-
-                if (profile.bio != null && profile.bio!.isNotEmpty) ...[
+            // Cards
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  // Quick stats row
+                  _QuickStats(profile: profile),
                   const SizedBox(height: 16),
+
+                  // Profile card thumbnail (editable)
+                  _CardThumbnailSection(
+                    profile: profile,
+                    profileCtrl: profileCtrl,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Contact details
                   _SectionCard(
-                    title: TKeys.aboutTheStore.tr,
-                    icon: Icons.info_outline_rounded,
+                    title: TKeys.contactInformation.tr,
+                    icon: Icons.contact_mail_rounded,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        child: CustomText(
-                          profile.bio!,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w500,
-                          height: 1.55,
-                          color: AppColors.textSecondary,
-                        ),
+                      _DetailTile(
+                        icon: Icons.mail_outline_rounded,
+                        title: TKeys.emailLabel.tr,
+                        subtitle: profile.email,
+                      ),
+                      _DetailTile(
+                        icon: Icons.phone_outlined,
+                        title: TKeys.phoneLabel.tr,
+                        subtitle: profile.phone,
                       ),
                     ],
                   ),
-                ],
 
-                if (profile.socialLinks.activeLinks.isNotEmpty) ...[
+                  if (profile.bio != null && profile.bio!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _SectionCard(
+                      title: TKeys.aboutTheStore.tr,
+                      icon: Icons.info_outline_rounded,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: CustomText(
+                            profile.bio!,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w500,
+                            height: 1.55,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  if (profile.socialLinks.activeLinks.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _SocialLinksSection(links: profile.socialLinks.activeLinks),
+                  ],
+
                   const SizedBox(height: 16),
-                  _SocialLinksSection(links: profile.socialLinks.activeLinks),
-                ],
 
-                const SizedBox(height: 16),
-
-                // Language — the app follows the device locale on first run,
-                // so this row is how a seller overrides that. The choice is
-                // persisted, so it survives a cold start.
-                _QuickActionRow(
-                  icon: Icons.language_rounded,
-                  tone: _Tone.violet,
-                  title: TKeys.languageRowTitle.tr,
-                  subtitle: TKeys.languageRowSubtitle.tr,
-                  onTap: () => _showLanguageSheet(context),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Orders — seller-wide list (the endpoint takes no product
-                // filter), so it lives on the profile rather than on a single
-                // product's detail page.
-                _QuickActionRow(
-                  icon: Icons.receipt_long_rounded,
-                  tone: _Tone.coral,
-                  title: TKeys.ordersLabel.tr,
-                  subtitle: TKeys.seeAllOrders.tr,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const OrdersView()),
+                  // Language — the app follows the device locale on first run,
+                  // so this row is how a seller overrides that. The choice is
+                  // persisted, so it survives a cold start.
+                  _QuickActionRow(
+                    icon: Icons.language_rounded,
+                    tone: _Tone.violet,
+                    title: TKeys.languageRowTitle.tr,
+                    subtitle: TKeys.languageRowSubtitle.tr,
+                    onTap: () => _showLanguageSheet(context),
                   ),
-                ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // Legal + support. App Review guideline 1.2 asks a UGC app to
-                // publish the terms its users agreed to and a way to reach a
-                // human; 5.1.1 asks for the privacy policy. All three open in
-                // the system browser rather than a WebView so the seller can
-                // read them signed in to the web account if they want to.
-                _QuickActionRow(
-                  icon: Icons.description_outlined,
-                  tone: _Tone.navy,
-                  title: TKeys.legalTerms.tr,
-                  subtitle: TKeys.legalTermsSubtitle.tr,
-                  onTap: () => _openLegalUrl(LegalUrls.terms),
-                ),
+                  // Orders — seller-wide list (the endpoint takes no product
+                  // filter), so it lives on the profile rather than on a single
+                  // product's detail page.
+                  _QuickActionRow(
+                    icon: Icons.receipt_long_rounded,
+                    tone: _Tone.coral,
+                    title: TKeys.ordersLabel.tr,
+                    subtitle: TKeys.seeAllOrders.tr,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const OrdersView()),
+                    ),
+                  ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                _QuickActionRow(
-                  icon: Icons.privacy_tip_outlined,
-                  tone: _Tone.blue,
-                  title: TKeys.legalPrivacy.tr,
-                  subtitle: TKeys.legalPrivacySubtitle.tr,
-                  onTap: () => _openLegalUrl(LegalUrls.privacy),
-                ),
+                  // Legal + support. App Review guideline 1.2 asks a UGC app to
+                  // publish the terms its users agreed to and a way to reach a
+                  // human; 5.1.1 asks for the privacy policy. All three open in
+                  // the system browser rather than a WebView so the seller can
+                  // read them signed in to the web account if they want to.
+                  _QuickActionRow(
+                    icon: Icons.description_outlined,
+                    tone: _Tone.navy,
+                    title: TKeys.legalTerms.tr,
+                    subtitle: TKeys.legalTermsSubtitle.tr,
+                    onTap: () => _openLegalUrl(LegalUrls.terms),
+                  ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                _QuickActionRow(
-                  icon: Icons.support_agent_rounded,
-                  tone: _Tone.green,
-                  title: TKeys.legalSupport.tr,
-                  subtitle: TKeys.legalSupportSubtitle.tr,
-                  onTap: () => _openLegalUrl(LegalUrls.support),
-                ),
+                  _QuickActionRow(
+                    icon: Icons.privacy_tip_outlined,
+                    tone: _Tone.blue,
+                    title: TKeys.legalPrivacy.tr,
+                    subtitle: TKeys.legalPrivacySubtitle.tr,
+                    onTap: () => _openLegalUrl(LegalUrls.privacy),
+                  ),
 
-                const SizedBox(height: 24),
+                  const SizedBox(height: 16),
 
-                // Logout
-                _LogoutButton(),
+                  _QuickActionRow(
+                    icon: Icons.support_agent_rounded,
+                    tone: _Tone.green,
+                    title: TKeys.legalSupport.tr,
+                    subtitle: TKeys.legalSupportSubtitle.tr,
+                    onTap: () => _openLegalUrl(LegalUrls.support),
+                  ),
 
-                const SizedBox(height: 18),
+                  const SizedBox(height: 24),
 
-                // Delete account. App Review guideline 5.1.1(v) requires this
-                // to be reachable from inside the app and easy to find, which
-                // is why it sits in the open under Logout instead of behind a
-                // submenu.
-                const _DeleteAccountButton(),
+                  // Logout
+                  _LogoutButton(),
 
-                SizedBox(height: bottom + 16),
-              ],
+                  const SizedBox(height: 18),
+
+                  // Delete account. App Review guideline 5.1.1(v) requires this
+                  // to be reachable from inside the app and easy to find, which
+                  // is why it sits in the open under Logout instead of behind a
+                  // submenu.
+                  const _DeleteAccountButton(),
+
+                  SizedBox(height: bottom + 16),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -2508,7 +2520,8 @@ class _ProfileContent extends StatelessWidget {
         children: [
           Icon(icon, size: 13, color: color),
           const SizedBox(width: 4),
-          CustomText(label, fontSize: 11.5, fontWeight: FontWeight.w700, color: color),
+          CustomText(label,
+              fontSize: 11.5, fontWeight: FontWeight.w700, color: color),
         ],
       ),
     );
@@ -2574,7 +2587,8 @@ Future<void> _pickAndUploadImage(
   if (ok) {
     AppSnackbar.show(TKeys.updatedTitle.tr, TKeys.imageUploaded.tr);
   } else {
-    AppSnackbar.show(TKeys.errorTitle.tr, ctrl.errorMessage ?? TKeys.couldNotUploadImage.tr);
+    AppSnackbar.show(
+        TKeys.errorTitle.tr, ctrl.errorMessage ?? TKeys.couldNotUploadImage.tr);
   }
 }
 
@@ -2594,7 +2608,8 @@ class _CameraBadge extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: AppColors.white, width: 2),
       ),
-      child: Icon(Icons.camera_alt_rounded, size: iconSize, color: AppColors.white),
+      child: Icon(Icons.camera_alt_rounded,
+          size: iconSize, color: AppColors.white),
     );
   }
 }
@@ -2654,7 +2669,8 @@ class _ProfileHeader extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.add_photo_alternate_outlined,
-                              size: 26, color: AppColors.brandNavy.withOpacity(0.7)),
+                              size: 26,
+                              color: AppColors.brandNavy.withOpacity(0.7)),
                           const SizedBox(height: 4),
                           CustomText(
                             TKeys.addCoverPhoto.tr,
@@ -2676,7 +2692,8 @@ class _ProfileHeader extends StatelessWidget {
                               child: const Center(
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.4,
-                                  valueColor: AlwaysStoppedAnimation(AppColors.white),
+                                  valueColor:
+                                      AlwaysStoppedAnimation(AppColors.white),
                                 ),
                               ),
                             ),
@@ -2698,7 +2715,8 @@ class _ProfileHeader extends StatelessWidget {
                 ),
               ),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppColors.white.withOpacity(0.92),
                   borderRadius: BorderRadius.circular(20),
@@ -2795,8 +2813,8 @@ class _ProfileHeader extends StatelessWidget {
                                     height: 24,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2.4,
-                                      valueColor:
-                                          AlwaysStoppedAnimation(AppColors.white),
+                                      valueColor: AlwaysStoppedAnimation(
+                                          AppColors.white),
                                     ),
                                   ),
                                 ),
@@ -2925,16 +2943,22 @@ class _QuickStats extends StatelessWidget {
           ],
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.brandYellow.withOpacity(0.4), width: 1),
+        border:
+            Border.all(color: AppColors.brandYellow.withOpacity(0.4), width: 1),
       ),
       child: Row(
         children: [
-          _StatItem(icon: Icons.store_rounded, label: TKeys.typeLabel.tr, value: profile.sellerType),
+          _StatItem(
+              icon: Icons.store_rounded,
+              label: TKeys.typeLabel.tr,
+              value: profile.sellerType),
           _verticalDivider(),
           _StatItem(
             icon: Icons.verified_user_rounded,
             label: TKeys.statusLabel.tr,
-            value: profile.approvalStatus == 'ACTIVE' ? TKeys.activeLabel.tr : profile.approvalStatus,
+            value: profile.approvalStatus == 'ACTIVE'
+                ? TKeys.activeLabel.tr
+                : profile.approvalStatus,
           ),
           _verticalDivider(),
           _StatItem(
@@ -2957,7 +2981,8 @@ class _QuickStats extends StatelessWidget {
 }
 
 class _StatItem extends StatelessWidget {
-  const _StatItem({required this.icon, required this.label, required this.value});
+  const _StatItem(
+      {required this.icon, required this.label, required this.value});
   final IconData icon;
   final String label;
   final String value;
@@ -3106,13 +3131,20 @@ class _SocialLinksSection extends StatelessWidget {
 
   IconData _iconFor(String name) {
     switch (name) {
-      case 'Website':   return Icons.language_rounded;
-      case 'Instagram': return Icons.camera_alt_rounded;
-      case 'Facebook':  return Icons.facebook_rounded;
-      case 'YouTube':   return Icons.play_circle_rounded;
-      case 'LinkedIn':  return Icons.work_outline_rounded;
-      case 'TikTok':    return Icons.music_note_rounded;
-      default:          return Icons.link_rounded;
+      case 'Website':
+        return Icons.language_rounded;
+      case 'Instagram':
+        return Icons.camera_alt_rounded;
+      case 'Facebook':
+        return Icons.facebook_rounded;
+      case 'YouTube':
+        return Icons.play_circle_rounded;
+      case 'LinkedIn':
+        return Icons.work_outline_rounded;
+      case 'TikTok':
+        return Icons.music_note_rounded;
+      default:
+        return Icons.link_rounded;
     }
   }
 
@@ -3163,7 +3195,6 @@ class _SocialLinksSection extends StatelessWidget {
     );
   }
 }
-
 
 /// Bottom-sheet language picker opened from the profile tab.
 ///
@@ -3269,9 +3300,7 @@ class _LanguageRow extends StatelessWidget {
                 label,
                 fontSize: 14.5,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected
-                    ? AppColors.brandNavy
-                    : AppColors.textSecondary,
+                color: selected ? AppColors.brandNavy : AppColors.textSecondary,
               ),
             ),
             if (selected)
@@ -3314,7 +3343,8 @@ class _LogoutButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.vipps.withOpacity(0.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.vipps.withOpacity(0.18), width: 1),
+          border:
+              Border.all(color: AppColors.vipps.withOpacity(0.18), width: 1),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3340,7 +3370,7 @@ class _LogoutButton extends StatelessWidget {
 class LegalUrls {
   LegalUrls._();
 
-  static const String terms   = 'https://tommesalg.no/terms';
+  static const String terms = 'https://tommesalg.no/terms';
   static const String privacy = 'https://tommesalg.no/privacy';
   static const String support = 'https://tommesalg.no/contact';
 }
@@ -3471,9 +3501,9 @@ class _BottomBar extends StatelessWidget {
     required this.onTap,
   });
 
-  final int                index;
-  final List<_TabSpec>     tabs;
-  final ValueChanged<int>  onTap;
+  final int index;
+  final List<_TabSpec> tabs;
+  final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3495,7 +3525,7 @@ class _BottomBar extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(6, 10, 6, 6),
           child: Row(
             children: List.generate(tabs.length, (i) {
-              final t        = tabs[i];
+              final t = tabs[i];
               final selected = i == index;
               return Expanded(
                 child: InkWell(
@@ -3549,9 +3579,8 @@ class _BottomBar extends StatelessWidget {
                         CustomText(
                           t.label,
                           fontSize: 10.5,
-                          fontWeight: selected
-                              ? FontWeight.w800
-                              : FontWeight.w500,
+                          fontWeight:
+                              selected ? FontWeight.w800 : FontWeight.w500,
                           color: selected
                               ? AppColors.brandNavy
                               : AppColors.textMuted,

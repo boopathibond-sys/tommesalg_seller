@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../controllers/auth_controller.dart';
 import '../../core/services/social_auth_service.dart';
@@ -262,10 +263,41 @@ class _LoginViewState extends State<LoginView> {
           const _StaySignedInNote(),
 
           const SizedBox(height: 22),
+          const _AppVersionLabel(),
 
           SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
         ],
       ),
+    );
+  }
+}
+
+/// Small "Version 1.0.8 (26)" line at the bottom of the login page. Read from
+/// the installed app, so it shows exactly what was set natively: Xcode's
+/// FLUTTER_BUILD_NAME / FLUTTER_BUILD_NUMBER on iOS, and build.gradle's
+/// versionName / versionCode on Android.
+class _AppVersionLabel extends StatelessWidget {
+  const _AppVersionLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snap) {
+        final info = snap.data;
+        if (info == null) return const SizedBox(height: 14);
+        return Center(
+          child: CustomText(
+            TKeys.authAppVersion.trParams({
+              'version': info.version,
+              'build': info.buildNumber,
+            }),
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textMuted,
+          ),
+        );
+      },
     );
   }
 }

@@ -1,5 +1,7 @@
+import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../localization/translation_keys.dart';
 
 import '../widgets/confirm_dialog.dart';
 
@@ -98,14 +100,11 @@ Future<bool> ensureAuctionMediaAccess(BuildContext context) async {
   final toSettings = outcome == MediaPermissionOutcome.permanentlyDenied;
   final proceed = await showConfirmDialog(
     context: context,
-    title: 'Camera & microphone needed',
+    title: TKeys.arPermissionTitle.tr,
     message: toSettings
-        ? 'To broadcast your live auction we need access to your camera and '
-            'microphone. Turn them on in Settings, then come back and enter '
-            'the room again.'
-        : 'To broadcast your live auction we need access to your camera and '
-            'microphone. Tap Allow on the next prompts.',
-    confirmLabel: toSettings ? 'Open settings' : 'Allow',
+        ? TKeys.mpPermissionBodySettings.tr
+        : TKeys.mpPermissionBodyPrompt.tr,
+    confirmLabel: toSettings ? TKeys.arOpenSettings.tr : TKeys.allowAction.tr,
     icon: Icons.videocam_off_rounded,
     destructive: false,
   );

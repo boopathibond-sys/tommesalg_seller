@@ -710,9 +710,8 @@ class _AnnouncementSheetState extends State<_AnnouncementSheet> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      const CustomText(
-                        'The announcement can only be managed while the stream '
-                        'is live.',
+                      CustomText(
+                        TKeys.rsAnnouncementLiveOnly.tr,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         height: 1.35,
@@ -889,9 +888,8 @@ Future<void> showEndingSoonDialog(
           ),
         ],
       ),
-      content: const CustomText(
-        'Your live stream is about to end and buyers will be disconnected. '
-        'Add more time to keep going.',
+      content: CustomText(
+        TKeys.rsAboutToEndBody.tr,
         fontSize: 14, fontWeight: FontWeight.w500, height: 1.4,
         color: AppColors.textSecondary,
       ),

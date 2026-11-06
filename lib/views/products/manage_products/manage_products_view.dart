@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -17,6 +19,7 @@ import '../../../core/widgets/branded_refresh_indicator.dart';
 import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/custom_text.dart';
 import '../../../models/product_request_model.dart';
+import '../../../models/product_scan_claim.dart';
 import '../../../models/seller_product.dart';
 import '../../../models/stream_model.dart';
 import '../../measurements/measurement_goals_section.dart';
@@ -25,6 +28,10 @@ import '../../stream/create_stream_view.dart';
 import '../../stream/stream_list_view.dart' show EnterRoomButton;
 import 'my_products_tab.dart';
 import 'product_detail_view.dart';
+import 'scanned_lines_panel.dart';
+import 'send_to_auction_confirm_dialog.dart';
+import '../../../core/widgets/zoomable_image_viewer.dart';
+import '../../../core/widgets/scroll_assist.dart';
 import '../../stock/shared/product_image_carousel.dart';
 import '../my_requests/my_requests_view.dart';
 import '../../../models/seller_product_request_summary.dart';
@@ -59,6 +66,14 @@ class _ManageProductViewState extends State<ManageProductView>
 
   final List<XFile> _selectedImages = [];
   bool _addingUnknown = false;
+
+  /// Drives the Requests page scroll: draggable scrollbar + jump buttons.
+  final ScrollController _requestsScroll = ScrollController();
+
+  /// The searchable, paged scanned-products list — lets a scan jump to the
+  /// page holding its line.
+  final GlobalKey<ScannedLinesPanelState> _linesPanelKey =
+      GlobalKey<ScannedLinesPanelState>();
 
   /// True while a typed UPC is being run through the scan endpoint.
   bool _throwing = false;
@@ -106,14 +121,18 @@ class _ManageProductViewState extends State<ManageProductView>
     _tabController.dispose();
     _nameController.dispose();
     _upcFieldCtrl.dispose();
+    _requestsScroll.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage() async {
-    final List<XFile> images = await ImageSourcePicker.pick(context);
+    final room = StreamListController.maxUnknownImages - _selectedImages.length;
+    if (room <= 0) return;
+    final List<XFile> images =
+        await ImageSourcePicker.pick(context, maxImages: room);
     if (images.isNotEmpty) {
       setState(() {
-        _selectedImages.addAll(images);
+        _selectedImages.addAll(images.take(room));
       });
     }
   }
@@ -196,7 +215,8 @@ class _ManageProductViewState extends State<ManageProductView>
     if (!added) {
       // Unknown UPC → the inline "add unknown product" form takes over.
       // Anything else (stream ended, network…) shows the server's message.
-      if (!ctrl.isProductNotFoundByScan) {
+      // Already scanned by another seller → the inline note explains it.
+      if (!ctrl.isProductNotFoundByScan && ctrl.alreadyScannedClaim == null) {
         AppSnackbar.show(TKeys.errorTitle.tr,
             ctrl.errorMessage ?? TKeys.couldNotAddProduct.tr);
       }
@@ -211,6 +231,13 @@ class _ManageProductViewState extends State<ManageProductView>
   /// opens the product's quick view.
   void _afterScanAdded(String upc) {
     final item = ctrl.lastScanItem;
+    // With hundreds of lines the scan may land on another page — flip to it
+    // and flash the row so the seller sees where it went.
+    if (item != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _linesPanelKey.currentState?.revealItem(item.id),
+      );
+    }
     if (ctrl.lastScanIncremented && item != null) {
       AppSnackbar.show(
         item.displayName,
@@ -296,6 +323,12 @@ class _ManageProductViewState extends State<ManageProductView>
       return;
     }
 
+    // Already scanned by another seller → shown as the inline note instead.
+    if (ctrl.alreadyScannedClaim != null) {
+      _upcFieldCtrl.clear();
+      return;
+    }
+
     AppSnackbar.show(TKeys.errorTitle.tr, ctrl.errorMessage ?? TKeys.couldNotAddProduct.tr);
   }
 
@@ -351,25 +384,20 @@ class _ManageProductViewState extends State<ManageProductView>
       AppSnackbar.show(TKeys.nothingToSend.tr, TKeys.addProductFirst.tr);
       return;
     }
-    final units = ctrl.unsentUnits;
-    final unknown = ctrl.unsentUnknownCount;
-
-    final body = TKeys.sendToLiveBody.trParams({
-      'units': '$units',
-      'stream': stream.title,
-    });
-    final confirmed = await showConfirmDialog(
+    if (!ctrl.canSubmitToLive) {
+      AppSnackbar.show(TKeys.nothingToSend.tr, TKeys.reqAllHeldNote.tr);
+      return;
+    }
+    // TW-193: count client-side what goes to the auction and what stays in
+    // draft (by hold reason) so the seller knows before confirming. The
+    // dialog lists every product being sent with its unit count.
+    final confirmed = await showSendToAuctionConfirm(
       context: context,
-      title: TKeys.sendToQueueTitle.tr,
-      message: unknown > 0
-          ? '$body ${TKeys.sendToLiveUnknownNote.trParams({'unknown': '$unknown'})}'
-          : body,
-      confirmLabel: TKeys.sendAction.tr,
-      cancelLabel: TKeys.cancelAction.tr,
-      icon: Icons.playlist_add_rounded,
-      // Queuing products is what the seller came here to do, so Cancel is the
-      // quiet option and Send is the CTA.
-      destructive: false,
+      streamTitle: stream.title,
+      ready: ctrl.readyToSendItems,
+      units: ctrl.unsentUnits,
+      heldIssues: ctrl.unsentHeldIssueCount,
+      heldUnknown: ctrl.unsentUnknownCount,
     );
     if (!confirmed || !mounted) return;
 
@@ -390,6 +418,8 @@ class _ManageProductViewState extends State<ManageProductView>
           'units': '${result.units}',
           'stream': stream.title,
         }),
+      if (result.heldIssues > 0)
+        TKeys.sentToLiveHeldIssues.trParams({'count': '${result.heldIssues}'}),
       if (result.unknown > 0)
         TKeys.sentToLiveUnknown.trParams({'unknown': '${result.unknown}'}),
       if (result.notQueued > 0)
@@ -407,12 +437,12 @@ class _ManageProductViewState extends State<ManageProductView>
   Future<void> _deleteProductRequestItem(ProductRequestItem item) async {
     if (ctrl.isDeletingItem(item.id)) return;
 
-    // Deleting a line also takes the product out of the auction queue, while
-    // units already sent to live stay in stock — say so before it happens.
-    final message = item.reservedQuantity > 0
+    // Deleting a line also takes the product out of the auction queue and
+    // takes back the unsold units it added to stock — say so first.
+    final message = item.confirmedUnits > 0
         ? TKeys.removeSentProductBody.trParams({
             'name': item.displayName,
-            'sent': '${item.reservedQuantity}',
+            'sent': '${item.confirmedUnits}',
           })
         : TKeys.removeProductBody.trParams({'name': item.displayName});
     final confirmed = await showConfirmDialog(
@@ -438,6 +468,59 @@ class _ManageProductViewState extends State<ManageProductView>
     } else {
       AppSnackbar.show(TKeys.errorTitle.tr, ctrl.errorMessage ?? TKeys.couldNotDeleteProduct.tr);
     }
+  }
+
+  /// The "−" for a line: nothing while the quantity is locked or a delete is
+  /// running; at the last new unit (nothing confirmed) it removes the line
+  /// like the delete button; otherwise it steps the quantity down.
+  VoidCallback? _decreaseAction(ProductRequestItem item, bool unlocked) {
+    if (!unlocked || ctrl.isDeletingItem(item.id)) return null;
+    if (item.unsentQuantity <= 1 && item.confirmedUnits == 0) {
+      return () => _deleteProductRequestItem(item);
+    }
+    return item.canDecreaseQuantity
+        ? () => _changeQuantity(item, item.quantityRequested - 1)
+        : null;
+  }
+
+  /// − (or a typed number) on a line: sets its quantity on the server. Only unconfirmed units
+  /// change; the server's refusal (below confirmed / defect units) is shown.
+  Future<void> _changeQuantity(ProductRequestItem item, int quantity) async {
+    if (ctrl.isUpdatingQuantity(item.id)) return;
+    final ok = await ctrl.updateProductRequestItemQuantity(
+      itemId: item.id,
+      quantity: quantity,
+    );
+    if (!mounted || ok) return;
+    AppSnackbar.show(TKeys.errorTitle.tr,
+        ctrl.errorMessage ?? TKeys.couldNotUpdateQuantity.tr);
+  }
+
+  /// Tap on the stepper's number: type the line's new (unsent) units. The
+  /// card shows unsent units only, while the PATCH takes the line total, so
+  /// the confirmed part is added back before sending.
+  Future<void> _editQuantity(ProductRequestItem item) async {
+    if (ctrl.isUpdatingQuantity(item.id)) return;
+    final base = item.quantityRequested - item.unsentQuantity;
+    // At least 1 — the field doesn't accept 0 (removing is the delete button).
+    final minUnits = item.minQuantity - base > 1 ? item.minQuantity - base : 1;
+    final maxUnits = ProductRequestItem.maxQuantity - base;
+    final units = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _QuantityEditSheet(
+        name: item.displayName,
+        initial: item.unsentQuantity,
+        min: minUnits,
+        max: maxUnits,
+      ),
+    );
+    if (!mounted || units == null || units == item.unsentQuantity) return;
+    await _changeQuantity(item, base + units);
   }
 
   void _openQuickView(ProductRequestItem item) {
@@ -531,11 +614,17 @@ class _ManageProductViewState extends State<ManageProductView>
           );
         }
 
-        return SingleChildScrollView(
+        // Long scanned lists: drag the scrollbar on the right, or use the
+        // floating buttons to jump to the top / bottom.
+        return ScrollAssist(
+          controller: _requestsScroll,
+          child: SingleChildScrollView(
+          controller: _requestsScroll,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.all(12),
+          // Extra bottom room so the jump buttons never cover the last card.
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 72),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _MyRequestsButton(onTap: _openMyRequests),
@@ -560,10 +649,11 @@ class _ManageProductViewState extends State<ManageProductView>
                     _StreamCardHeader(count: ctrl.scheduledStreams.length),
                     const SizedBox(height: 10),
                     _StreamPickerField(
-                      selected: ctrl.scheduledStreams
-                              .contains(ctrl.selectedStream.value)
-                          ? ctrl.selectedStream.value
-                          : null,
+                      // Matched by id, not identity: a background re-sync
+                      // replaces every instance, so the picked one can be a
+                      // stale copy that `contains` would miss.
+                      selected: ctrl.scheduledStreams.firstWhereOrNull(
+                          (s) => s.id == ctrl.selectedStream.value?.id),
                       streams: ctrl.scheduledStreams,
                       formatDate: formatDate,
                       onSelected: ctrl.selectStream,
@@ -585,6 +675,13 @@ class _ManageProductViewState extends State<ManageProductView>
                       controller: _upcFieldCtrl,
                       busy: _throwing,
                       onAdd: () => _processUpc(_upcFieldCtrl.text),
+                    ),
+                  ],
+                  if (ctrl.alreadyScannedClaim != null) ...[
+                    const SizedBox(height: 12),
+                    _AlreadyScannedNote(
+                      claim: ctrl.alreadyScannedClaim!,
+                      onDismiss: ctrl.clearAlreadyScannedClaim,
                     ),
                   ],
                   if (ctrl.isProductNotFoundByScan) ...[
@@ -656,7 +753,12 @@ class _ManageProductViewState extends State<ManageProductView>
                             height: 110,
                             child: ListView.separated(
                               scrollDirection: Axis.horizontal,
-                              itemCount: _selectedImages.length + 1,
+                              // No "add" tile once the 8-photo cap is hit.
+                              itemCount: _selectedImages.length +
+                                  (_selectedImages.length <
+                                          StreamListController.maxUnknownImages
+                                      ? 1
+                                      : 0),
                               separatorBuilder: (_, __) =>
                                   const SizedBox(width: 10),
                               itemBuilder: (context, index) {
@@ -809,28 +911,54 @@ class _ManageProductViewState extends State<ManageProductView>
                     onSend: _sendToAuctionQueue,
                   ),
                   const SizedBox(height: 14),
-                  ...ctrl.visibleRequestItems.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
+                  // Search + filter chips + pages: a 500-line stream stays a
+                  // short screen instead of an endless scroll.
+                  ScannedLinesPanel(
+                    key: _linesPanelKey,
+                    ctrl: ctrl,
+                    itemBuilder: (item, highlighted) {
+                    // Locked after the first scan; a second scan of the same
+                    // UPC unlocks it (see isQuantityUnlocked).
+                    final qtyUnlocked = ctrl.isQuantityUnlocked(item);
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: highlighted
+                              ? AppColors.brandYellow
+                              : Colors.transparent,
+                          width: 2.5,
+                        ),
+                      ),
                       child: _ScannedProductCard(
                         id: item.id,
                         upc: item.requestedUpc??'',
                         name: item.displayName,
-                        // Only the units not sent to live yet.
+                        // Only the units not confirmed yet (`newScanQuantity`).
                         quantity: item.unsentQuantity,
                         lineStatus: item.lineStatus,
-                        reservedQuantity: item.reservedQuantity,
-                        pendingQuantity: item.pendingQuantity,
+                        holdReason: item.effectiveHoldReason,
+                        streamRemaining: item.streamRemainingQuantity,
                         imageUrl: item.displayImageUrl,
                         deleting: ctrl.isDeletingItem(item.id),
+                        updatingQuantity: ctrl.isUpdatingQuantity(item.id),
+                        // Unknown lines waiting on admin aren't editable.
+                        showStepper: ctrl.canEditRequestQuantities &&
+                            item.lineStatus != 'PENDING_UNKNOWN',
+                        onDecrease: _decreaseAction(item, qtyUnlocked),
+                        onEditQuantity:
+                            qtyUnlocked ? () => _editQuantity(item) : null,
                         onDelete: () => _deleteProductRequestItem(item),
                         onQuickView: () => _openQuickView(item),
                       ),
                     );
-                  }),
+                    },
+                  ),
                 ],
               ],
             ],
+          ),
           ),
         );
       }),
@@ -855,9 +983,12 @@ class _SendToQueueBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final count = ctrl.productRequestItems.length;
+      // Only lines that would actually be queued — held ones wait for the
+      // admin and are released by the server, never re-submitted.
+      final count = ctrl.readyToSendItems.length;
       final busy = ctrl.isSendingToQueue;
-      final enabled = count > 0 && !busy;
+      final enabled = ctrl.canSubmitToLive && !busy;
+      final held = ctrl.heldLineCount;
 
       return Container(
         padding: const EdgeInsets.all(12),
@@ -876,6 +1007,28 @@ class _SendToQueueBar extends StatelessWidget {
               height: 1.4,
               color: AppColors.textSecondary,
             ),
+            if (held > 0) ...[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.hourglass_top_rounded,
+                      size: 14, color: Colors.orange.shade800),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: CustomText(
+                      count == 0
+                          ? TKeys.reqAllHeldNote.tr
+                          : TKeys.reqHeldNote.trParams({'count': '$held'}),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                      color: Colors.orange.shade800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
@@ -1176,14 +1329,20 @@ class _ScannedProductCard extends StatelessWidget {
     required this.onDelete,
     required this.onQuickView,
     required this.lineStatus,
-    required this.reservedQuantity,
-    required this.pendingQuantity,
+    this.holdReason,
+    this.streamRemaining,
     this.deleting = false,
+    this.updatingQuantity = false,
+    this.showStepper = false,
+    this.onDecrease,
+    this.onEditQuantity,
   });
 
   final String id;
   final String name;
   final String upc;
+
+  /// New (unconfirmed) units on this line — `newScanQuantity`.
   final int quantity;
   final String imageUrl;
 
@@ -1191,11 +1350,13 @@ class _ScannedProductCard extends StatelessWidget {
   /// PENDING_UNKNOWN | CANCELLED.
   final String lineStatus;
 
-  /// Units already credited to stock for this line.
-  final int reservedQuantity;
+  /// TW-193: `UNKNOWN_PRODUCT` / `OPEN_ISSUE` when submit keeps this line in
+  /// draft for the admin; null when it goes to the auction.
+  final String? holdReason;
 
-  /// Units still waiting on stock.
-  final int pendingQuantity;
+  /// Units still sellable on this stream (`streamRemainingQuantity`); null
+  /// for unknown-UPC lines and products that aren't stock-managed.
+  final int? streamRemaining;
 
   /// True while this row's delete call is in flight — swaps the button for a
   /// spinner and swallows further taps.
@@ -1203,198 +1364,599 @@ class _ScannedProductCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onQuickView;
 
-  int get _reserved => reservedQuantity;
+  /// The "−" quantity control. A null callback disables it;
+  /// [updatingQuantity] swaps the number for a spinner while the PATCH runs.
+  final bool showStepper;
+  final bool updatingQuantity;
+  final VoidCallback? onDecrease;
 
-  /// A draft line hasn't been submitted yet, so the backend may not have
-  /// split it into reserved / pending — treat all scanned units as waiting.
-  int get _waiting => lineStatus == 'DRAFT' && pendingQuantity == 0
-      ? quantity
-      : pendingQuantity;
+  /// Tap on the number: type the quantity instead of stepping to it.
+  final VoidCallback? onEditQuantity;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.grey),
-      ),
-      // IntrinsicHeight + stretch lets the button column span the card's
-      // full height, so the buttons can sit vertically centred on the right.
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Total (reserved + waiting) tucked into the image's bottom-right corner.
-            Align(
-              alignment: Alignment.topCenter,
-              child: Stack(
-                clipBehavior: Clip.none,
+    // Unknown products waiting on admin have no catalogue entry to preview.
+    final canPreview = lineStatus != 'PENDING_UNKNOWN';
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        // The whole card opens the quick view — a big, easy target.
+        onTap: canPreview ? onQuickView : null,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.borderGrey),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _thumb(),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CustomText(
+                      name,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      color: AppColors.textPrimary,
+                    ),
+                    const SizedBox(height: 2),
+                    CustomText(
+                      'UPC $upc',
+                      fontSize: 10.5,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(height: 6),
+                    // Wrap, not Row: long Norwegian labels drop to a second
+                    // line instead of overflowing.
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        // An OPEN_ISSUE line is a plain DRAFT, so the status
+                        // alone would hide that it's waiting for the admin.
+                        if (holdReason == null ||
+                            lineStatus != 'PENDING_UNKNOWN')
+                          _LineStatusPill(lineStatus: lineStatus),
+                        if (holdReason != null)
+                          _HoldReasonPill(holdReason: holdReason!),
+                        CustomText(
+                          streamRemaining == null
+                              ? TKeys.reqNewScanOnly
+                                  .trParams({'new': '$quantity'})
+                              : TKeys.reqNewScanLeft.trParams({
+                                  'new': '$quantity',
+                                  'left': '$streamRemaining',
+                                }),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.brandNavy,
+                        ),
+                      ],
+                    ),
+                    if (showStepper) ...[
+                      const SizedBox(height: 6),
+                      _QuantityStepper(
+                        quantity: quantity,
+                        busy: updatingQuantity,
+                        onDecrease: onDecrease,
+                        onEdit: onEditQuantity,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              // Icon-only actions: fixed size in every language.
+              Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      imageUrl,
-                      width: 70,
-                      height: 70,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 70,
-                        height: 70,
-                        color: AppColors.grey,
-                        child: const Icon(
-                          Icons.image_not_supported_outlined,
+                  if (canPreview) ...[
+                    _CardIconButton(
+                      icon: Icons.remove_red_eye_outlined,
+                      tooltip: TKeys.quickView.tr,
+                      color: AppColors.brandNavy,
+                      onTap: onQuickView,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  _CardIconButton(
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: TKeys.deleteAction2.tr,
+                    color: Colors.red,
+                    busy: deleting,
+                    onTap: deleting ? null : onDelete,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 56px photo with the new-scan count tucked into its corner.
+  Widget _thumb() {
+    Widget fallback() => Container(
+          width: 56,
+          height: 56,
+          color: AppColors.inputFill,
+          child: const Icon(Icons.image_not_supported_outlined,
+              size: 20, color: AppColors.textMuted),
+        );
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: imageUrl.isEmpty
+              ? fallback()
+              : Image.network(
+                  imageUrl,
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => fallback(),
+                ),
+        ),
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 22),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            decoration: const BoxDecoration(
+              color: AppColors.brandYellow,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(8),
+                bottomRight: Radius.circular(10),
+              ),
+            ),
+            child: CustomText(
+              'x$quantity',
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: AppColors.brandNavy,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Round, tinted icon button for a scanned-product card.
+class _CardIconButton extends StatelessWidget {
+  const _CardIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+    this.busy = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback? onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: color.withOpacity(0.10),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: busy
+                ? Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(color),
+                    ),
+                  )
+                : Icon(icon, size: 18, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "−  N" control for a request line's unconfirmed units.
+class _QuantityStepper extends StatelessWidget {
+  const _QuantityStepper({
+    required this.quantity,
+    required this.busy,
+    this.onDecrease,
+    this.onEdit,
+  });
+
+  final int quantity;
+  final bool busy;
+  final VoidCallback? onDecrease;
+  final VoidCallback? onEdit;
+
+  Widget _button(IconData icon, VoidCallback? onTap) {
+    final enabled = onTap != null && !busy;
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: AppColors.brandNavy.withOpacity(enabled ? 0.1 : 0.04),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: enabled ? AppColors.brandNavy : AppColors.textMuted,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _button(Icons.remove_rounded, onDecrease),
+        const SizedBox(width: 4),
+        // Underlined box hints the number is tappable for typed entry.
+        InkWell(
+          onTap: busy ? null : onEdit,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 40,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: onEdit != null && !busy
+                    ? AppColors.inputBorder
+                    : Colors.transparent,
+              ),
+            ),
+            child: busy
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : CustomText(
+                    '$quantity',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Bottom sheet for typing a request line's new units. Whole numbers only;
+/// pops with the chosen value, or nothing on cancel.
+///
+/// iOS: the number pad has no return key, so the keyboard closes via the
+/// app-wide [KeyboardDoneBar], a tap anywhere outside the field, or the
+/// keyboard button in the header. Save drops focus before popping so the
+/// keyboard never lingers over the list underneath.
+class _QuantityEditSheet extends StatefulWidget {
+  const _QuantityEditSheet({
+    required this.name,
+    required this.initial,
+    required this.min,
+    required this.max,
+  });
+
+  final String name;
+  final int initial;
+  final int min;
+  final int max;
+
+  @override
+  State<_QuantityEditSheet> createState() => _QuantityEditSheetState();
+}
+
+class _QuantityEditSheetState extends State<_QuantityEditSheet> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: '${widget.initial}');
+  final FocusNode _focus = FocusNode();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.selection =
+        TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    // Shows / hides the header's close-keyboard button.
+    _focus.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _closeKeyboard() => FocusManager.instance.primaryFocus?.unfocus();
+
+  void _save() {
+    final value = int.tryParse(_ctrl.text.trim());
+    if (value == null || value < widget.min || value > widget.max) {
+      setState(() => _error = TKeys.reqQtyRange.trParams({
+            'min': '${widget.min}',
+            'max': '${widget.max}',
+          }));
+      return;
+    }
+    _closeKeyboard();
+    Navigator.of(context).pop(value);
+  }
+
+  void _cancel() {
+    _closeKeyboard();
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Includes the iOS Done bar's height, so the sheet sits above both.
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _closeKeyboard,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + keyboard),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.borderGrey,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: CustomText(
+                      TKeys.reqQtyEditTitle.tr,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  if (_focus.hasFocus)
+                    IconButton(
+                      tooltip: TKeys.doneAction.tr,
+                      onPressed: _closeKeyboard,
+                      icon: const Icon(Icons.keyboard_hide_rounded,
+                          color: AppColors.brandNavy),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              CustomText(
+                widget.name,
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                maxLines: 2,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _ctrl,
+                focusNode: _focus,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                inputFormatters: [
+                  // No leading zero: "0" and "05" can't be typed at all.
+                  FilteringTextInputFormatter.allow(RegExp(r'^[1-9][0-9]*')),
+                  LengthLimitingTextInputFormatter(3),
+                ],
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
+                onSubmitted: (_) => _save(),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  errorText: _error,
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.inputBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.inputBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide:
+                        const BorderSide(color: AppColors.brandNavy, width: 1.4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: _cancel,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.brandNavy,
+                          side: const BorderSide(color: AppColors.inputBorder),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: CustomText(
+                          TKeys.cancel.tr,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.brandNavy,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: _save,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.brandNavy,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: CustomText(
+                          TKeys.save.tr,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
                     ),
                   ),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 24),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: AppColors.brandYellow,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(12),
-                          bottomRight: Radius.circular(12),
-                        ),
-                      ),
-                      child: CustomText(
-                        'x${_reserved + _waiting}',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.brandNavy,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                      ),
-                    ),
-                  ),
                 ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CustomText(
-                    name,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 4),
-                  CustomText(
-                    'UPC: $upc',
-                    fontSize: 11,
-                    color: Colors.grey,
-                    maxLines: 1,
-                  ),
-                  const SizedBox(height: 6),
-                  _LineStatusPill(lineStatus: lineStatus),
-                  const SizedBox(height: 4),
-                  CustomText(
-                    TKeys.reqReservedWaiting.trParams({
-                      'reserved': '$_reserved',
-                      'waiting': '$_waiting',
-                    }),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.brandNavy,
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Waiting for admin" tag for a held line (TW-193 `holdReason`).
+class _HoldReasonPill extends StatelessWidget {
+  const _HoldReasonPill({required this.holdReason});
+
+  final String holdReason;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = holdReason == ProductRequestItem.holdOpenIssue
+        ? TKeys.reqHoldOpenIssue.tr
+        : TKeys.reqHoldUnknownProduct.tr;
+    final fg = Colors.orange.shade800;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: fg.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.hourglass_top_rounded, size: 12, color: fg),
+          const SizedBox(width: 4),
+          CustomText(
+            label,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: fg,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown in the quick view once a discrepancy is reported: the line now waits
+/// for the admin instead of going to the auction.
+class _AwaitingAdminBanner extends StatelessWidget {
+  const _AwaitingAdminBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = Colors.orange.shade800;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: fg.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: fg.withOpacity(0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.hourglass_top_rounded, size: 16, color: fg),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Unknown products waiting on admin have no catalogue entry
-                // to preview yet.
-                if (lineStatus != 'PENDING_UNKNOWN') ...[
-                  GestureDetector(
-                    onTap: onQuickView,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 5,
-                      ),
-                      width: 108,
-                      decoration: BoxDecoration(
-                        color: AppColors.brandNavy.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.remove_red_eye_outlined,
-                            size: 18,
-                            color: AppColors.brandNavy,
-                          ),
-                          const SizedBox(width: 4),
-                          CustomText(
-                            TKeys.quickView.tr,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                GestureDetector(
-                  onTap: deleting ? null : onDelete,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 5,
-                    ),
-                    width: 108,
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: deleting
-                        ? const Center(
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(Colors.red),
-                              ),
-                            ),
-                          )
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.delete_outline,
-                                size: 18,
-                                color: Colors.red,
-                              ),
-                              const SizedBox(width: 4),
-                              CustomText(
-                                TKeys.deleteAction2.tr,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ],
-                          ),
-                  ),
+                CustomText(
+                  TKeys.reqIssueAwaitingAdmin.tr,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: fg,
+                ),
+                const SizedBox(height: 2),
+                CustomText(
+                  TKeys.reqIssueAwaitingAdminBody.tr,
+                  fontSize: 12,
+                  height: 1.4,
+                  color: AppColors.textSecondary,
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1409,8 +1971,10 @@ class _LineStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, fg) = switch (lineStatus) {
-      'RESERVED' => (TKeys.reqQtyReserved.tr, Colors.green.shade700),
-      'PENDING_STOCK' => (TKeys.reqLinePendingStock.tr, Colors.orange.shade800),
+      // RESERVED is the historical name for "confirmed into stock".
+      'RESERVED' => (TKeys.reqQtyConfirmed.tr, Colors.green.shade700),
+      // Legacy — no longer produced; shown neutrally if an old row appears.
+      'PENDING_STOCK' => (TKeys.reqLinePendingStock.tr, AppColors.textSecondary),
       'PENDING_UNKNOWN' => (TKeys.reqLinePendingUnknown.tr, Colors.orange.shade800),
       'CANCELLED' => (TKeys.reqStatusCancelled.tr, Colors.red),
       'FULFILLED' => (TKeys.reqStatusFulfilled.tr, Colors.green.shade700),
@@ -1464,6 +2028,11 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
   /// The discrepancy report is read-only until its pencil is tapped.
   bool _editingReport = false;
 
+  /// A report is on file and the admin hasn't resolved it yet — the line is
+  /// held out of the auction until they do.
+  late bool _awaitingAdmin = widget.item.hasOpenIssue ||
+      widget.item.effectiveHoldReason == ProductRequestItem.holdOpenIssue;
+
   // ---------- Defect state ----------
   ProductDefect? _defect;
   bool _loadingDefect = true;
@@ -1496,6 +2065,24 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
   /// "never set") — the "Saved: … NOK" line only shows when it does.
   late bool _shippingConfigured;
 
+  // ---------- Catalog SKU state ----------
+  /// Max length the API accepts for `products.sku`.
+  static const int _maxSkuLength = 64;
+  final TextEditingController _skuCtrl = TextEditingController();
+
+  /// SKU last confirmed by the server (null = not entered yet). Shown as
+  /// "Saved: …" under the field and replaced after every successful save.
+  String? _savedSku;
+  bool _savingSku = false;
+  String? _skuError;
+
+  /// Save is enabled only for a non-empty trimmed value that differs from
+  /// the saved one (the API has no "clear" action).
+  bool get _skuDirty {
+    final v = _skuCtrl.text.trim();
+    return v.isNotEmpty && v != (_savedSku ?? '');
+  }
+
   ProductRequestItem get _item => widget.item;
   ProductRequestProduct? get _product => widget.item.product;
 
@@ -1517,14 +2104,18 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
   String get _suggestedPrice =>
       formatNokOrDash(_product?.originalPrice);
 
-  String get _color =>
-      _product?.colour ??
-      ((_product?.colorsAvailable.isNotEmpty ?? false)
-          ? _product!.colorsAvailable.join(', ')
-          : '-');
-  String get _sizes => (_product?.sizesAvailable.isNotEmpty ?? false)
-      ? _product!.sizesAvailable.join(', ')
-      : '-';
+  /// `colourNorsk` exactly as the API sends it ("Hvit") in every language —
+  /// values are never translated. Falls back to `colour`, then the
+  /// available colours.
+  String get _color {
+    final p = _product;
+    if (p == null) return '-';
+    final raw = p.colour?.trim().isNotEmpty == true ? p.colour : null;
+    final value = p.colourNorsk ?? raw;
+    if (value != null) return value;
+    return p.colorsAvailable.isNotEmpty ? p.colorsAvailable.join(', ') : '-';
+  }
+
   String get _description =>
       (_product?.shortDescription?.trim().isNotEmpty ?? false)
           ? _product!.shortDescription!
@@ -1549,6 +2140,8 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
         : _standardShipping;
     _shipping = _savedShipping;
     _shippingConfigured = raw != null && raw > 0;
+    _savedSku = _product?.sku;
+    _skuCtrl.text = _savedSku ?? '';
     ShippingOptionsService.instance.load().then(_applyShippingOptions);
     _loadIssue();
     if (_canEditShipping) {
@@ -1632,6 +2225,7 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
   void dispose() {
     _reportCtrl.dispose();
     _defectCtrl.dispose();
+    _skuCtrl.dispose();
     super.dispose();
   }
 
@@ -1749,6 +2343,7 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
       if (ok) {
         _editingReport = false;
         _reportImages.clear();
+        _awaitingAdmin = true;
       }
     });
 
@@ -1784,7 +2379,50 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
     setState(() {
       _defect = defect;
       _loadingDefect = false;
+      // The preview carries the latest shared SKU (another seller or admin
+      // may have changed it). Adopt it unless the seller is mid-edit.
+      final fresh = defect?.sku;
+      if (fresh != null && fresh != _savedSku) {
+        final untouched = _skuCtrl.text.trim() == (_savedSku ?? '');
+        _savedSku = fresh;
+        if (untouched) _skuCtrl.text = fresh;
+      }
     });
+  }
+
+  Future<void> _saveSku() async {
+    if (_savingSku || !_skuDirty) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _savingSku = true;
+      _skuError = null;
+    });
+
+    final stored = await _ctrl.updateProductSku(
+      productId: _item.productId,
+      sku: _skuCtrl.text,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _savingSku = false;
+      if (stored != null) {
+        _savedSku = stored;
+        _skuCtrl.text = stored;
+      } else {
+        _skuError = _ctrl.errorMessage ?? TKeys.couldNotSaveSku.tr;
+      }
+    });
+
+    if (stored != null) {
+      AppSnackbar.show(
+        TKeys.skuSaved.tr,
+        TKeys.skuSavedValue.trParams({'value': stored}),
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.green.shade600,
+        colorText: Colors.white,
+      );
+    }
   }
 
   /// Seeds the edit form from the saved defect.
@@ -1816,20 +2454,40 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
       for (final img in _defectNew) {
         keys.add(await service.uploadImage(_item.productId, img.path));
       }
+      final quantity = clearing ? 0 : _defectQty;
       final saved = await service.save(
         productId: _item.productId,
         requestItemId: _item.id,
         imageKeys: keys,
         description: description,
-        defectQuantity: clearing ? 0 : _defectQty,
+        defectQuantity: quantity,
       );
+      // The PUT answers in its own shape (storage keys, not the preview's
+      // defectImages / defectDescription / defectQuantity), so showing it
+      // directly left the section blank until the quick view was reopened.
+      // Re-read the preview — the same call reopening makes — so the saved
+      // photos come back as display URLs and the units are the server's.
+      final fresh = await service.fetch(_item.productId);
       if (!mounted) return;
       setState(() {
-        _defect = saved;
+        _defect = fresh ??
+            // Preview unreachable: fall back to what was just saved, keeping
+            // the photos we already hold as URLs.
+            ProductDefect(
+              images: saved.images.any((u) => u.startsWith('http'))
+                  ? saved.images
+                  : (clearing ? const [] : List.of(_defectExisting)),
+              description: description,
+              quantity: quantity,
+              sku: _defect?.sku,
+            );
         _defectNew.clear();
         _editingDefect = false;
         _savingDefect = false;
       });
+      // Keep the request card behind the dialog in step (defect units,
+      // minimum quantity) without a list spinner.
+      unawaited(_ctrl.refreshProductRequestDetail());
       AppSnackbar.show(
         TKeys.successTitle.tr,
         clearing ? TKeys.defectCleared.tr : TKeys.defectSaved.tr,
@@ -1880,8 +2538,23 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
                     _buildPriceRow(),
                     const SizedBox(height: 14),
                     _buildSpecLine(TKeys.colorColon.tr, _color),
-                    const SizedBox(height: 6),
-                    _buildSpecLine(TKeys.sizesColon.tr, _sizes),
+                    // Størrelse only when the API sends `sizeFilter`;
+                    // available sizes are never shown here.
+                    if (_product?.sizeFilter != null) ...[
+                      const SizedBox(height: 6),
+                      _buildSpecLine(
+                          '${TKeys.fieldSize.tr}:', _product!.sizeFilter!),
+                    ],
+                    if (_product?.usSize != null) ...[
+                      const SizedBox(height: 6),
+                      _buildSpecLine(
+                          '${TKeys.fieldUsSize.tr}:', _product!.usSize!),
+                    ],
+                    if (_product?.euSize != null) ...[
+                      const SizedBox(height: 6),
+                      _buildSpecLine(
+                          '${TKeys.fieldEuSize.tr}:', _product!.euSize!),
+                    ],
                     const SizedBox(height: 12),
                     CustomText(
                       _description,
@@ -1920,6 +2593,43 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
                       _buildShippingDropdown(),
                       const SizedBox(height: 12),
                       _buildSaveShippingButton(),
+                    ],
+
+                    // ── Catalog SKU ───────────────────────────────────────
+                    // Product-level SKU, shared with admin and other sellers.
+                    if (_canEditShipping) ...[
+                      const SizedBox(height: 18),
+                      const Divider(height: 1, color: AppColors.inputBorder),
+                      const SizedBox(height: 18),
+                      _buildSectionLabel(TKeys.catalogSkuCaps.tr),
+                      const SizedBox(height: 6),
+                      CustomText(
+                        TKeys.catalogSkuBody.tr,
+                        fontSize: 12.5,
+                        height: 1.45,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildSkuField(),
+                      if (_savedSku != null) ...[
+                        const SizedBox(height: 8),
+                        CustomText(
+                          TKeys.skuSavedValue.trParams({'value': _savedSku!}),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ],
+                      if (_skuError != null) ...[
+                        const SizedBox(height: 8),
+                        CustomText(
+                          _skuError!,
+                          fontSize: 12.5,
+                          color: Colors.red.shade600,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      _buildSaveSkuButton(),
                     ],
 
                     // ── Measurements ──────────────────────────────────────
@@ -1981,6 +2691,10 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
                         color: AppColors.textSecondary,
                       ),
                       const SizedBox(height: 12),
+                      if (_awaitingAdmin && !_editingReport) ...[
+                        const _AwaitingAdminBanner(),
+                        const SizedBox(height: 12),
+                      ],
                       if (_loadingIssue)
                         _buildSectionSpinner()
                       else if (_editingReport)
@@ -2418,6 +3132,78 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
     );
   }
 
+  Widget _buildSkuField() {
+    return TextField(
+      controller: _skuCtrl,
+      enabled: !_savingSku,
+      maxLength: _maxSkuLength,
+      textInputAction: TextInputAction.done,
+      onChanged: (_) => setState(() => _skuError = null),
+      onSubmitted: (_) => _saveSku(),
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textPrimary,
+      ),
+      decoration: InputDecoration(
+        hintText: TKeys.catalogSkuHint.tr,
+        counterText: '',
+        isDense: true,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.inputBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.inputBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.brandNavy, width: 1.4),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSaveSkuButton() {
+    final enabled = _skuDirty && !_savingSku;
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: enabled ? _saveSku : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.brandNavy,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.inputBorder,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: _savingSku
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : CustomText(
+                TKeys.saveSku.tr,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: enabled ? Colors.white : AppColors.textSecondary,
+              ),
+      ),
+    );
+  }
+
   Widget _buildSaveShippingButton() {
     final dirty = _shipping != _savedShipping;
     return SizedBox(
@@ -2562,9 +3348,17 @@ class _ProductDiscrepancyDialogState extends State<_ProductDiscrepancyDialog> {
           final onRemove = isUrl ? onRemoveUrl : onRemoveFile;
           return Stack(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: thumb,
+              // Tap → large, zoomable view of every photo in this strip.
+              GestureDetector(
+                onTap: () => showZoomableImages(
+                  context,
+                  images: [...urls, ...files.map((f) => f.path)],
+                  initialIndex: index,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: thumb,
+                ),
               ),
               if (onRemove != null)
                 Positioned(
@@ -2805,9 +3599,11 @@ class _ManualUpcSheetState extends State<_ManualUpcSheet> {
   }
 
   Future<void> _pickImage() async {
-    final images = await ImageSourcePicker.pick(context);
+    final room = StreamListController.maxUnknownImages - _selectedImages.length;
+    if (room <= 0) return;
+    final images = await ImageSourcePicker.pick(context, maxImages: room);
     if (images.isNotEmpty && mounted) {
-      setState(() => _selectedImages.addAll(images));
+      setState(() => _selectedImages.addAll(images.take(room)));
     }
   }
 
@@ -2956,7 +3752,12 @@ class _ManualUpcSheetState extends State<_ManualUpcSheet> {
                 height: 110,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  itemCount: _selectedImages.length + 1,
+                  // No "add" tile once the 8-photo cap is hit.
+                  itemCount: _selectedImages.length +
+                      (_selectedImages.length <
+                              StreamListController.maxUnknownImages
+                          ? 1
+                          : 0),
                   separatorBuilder: (_, __) => const SizedBox(width: 10),
                   itemBuilder: (context, index) {
                     if (index == _selectedImages.length) {
@@ -3505,7 +4306,7 @@ class _StreamPickerSheet extends StatelessWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 6),
                 itemBuilder: (_, i) {
                   final stream = streams[i];
-                  final isSelected = stream == selected;
+                  final isSelected = stream.id == selected?.id;
                   return Material(
                     color: isSelected
                         ? AppColors.brandNavy.withOpacity(0.04)
@@ -3639,6 +4440,77 @@ class _StreamSubtitle extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Inline note for a scan refused with `409 PRODUCT_ALREADY_SCANNED`: names
+/// the product, the seller who already scanned it and their stream. Nothing
+/// was added to this seller's request.
+class _AlreadyScannedNote extends StatelessWidget {
+  const _AlreadyScannedNote({required this.claim, required this.onDismiss});
+
+  final ProductScanClaim claim;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final product =
+        claim.productName ?? TKeys.alreadyScannedThisProduct.tr;
+    final seller =
+        claim.sellerName ?? TKeys.alreadyScannedAnotherSeller.tr;
+    final stream = claim.streamName;
+    final body = stream != null
+        ? TKeys.alreadyScannedNote.trParams(
+            {'product': product, 'seller': seller, 'stream': stream})
+        : TKeys.alreadyScannedNoteNoStream
+            .trParams({'product': product, 'seller': seller});
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: AppColors.toggleTrack.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.inputBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.info_outline_rounded,
+                size: 20, color: AppColors.brandNavy),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CustomText(
+                  TKeys.alreadyScannedTitle.tr,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.brandNavy,
+                ),
+                const SizedBox(height: 4),
+                CustomText(
+                  body,
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onDismiss,
+            icon: const Icon(Icons.close_rounded, size: 18),
+            color: AppColors.textSecondary,
+            splashRadius: 18,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
     );
   }
 }

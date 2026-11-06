@@ -132,20 +132,20 @@ class InventoryController extends GetxController {
           );
           return true;
         }
-        _statsError.value = 'Unexpected response format.';
+        _statsError.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
       if (response.statusCode == 403) {
-        _statsError.value = 'Warehouse is only available for managed sellers.';
+        _statsError.value = TKeys.svcManagedSellersOnly.tr;
         return false;
       }
 
-      _statsError.value = 'Failed to load stats: ${response.statusCode}';
+      _statsError.value = TKeys.errLoadStats.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Inventory stats fetch error: $e');
-      _statsError.value = 'Network error. Please try again.';
+      _statsError.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isLoadingStats.value = false;
@@ -186,21 +186,21 @@ class InventoryController extends GetxController {
               .toList();
           return true;
         }
-        _locationsError.value = 'Unexpected response format.';
+        _locationsError.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
       if (response.statusCode == 403) {
         _locationsError.value =
-            'Warehouse is only available for managed sellers.';
+            TKeys.svcManagedSellersOnly.tr;
         return false;
       }
 
-      _locationsError.value = 'Failed to load SKUs: ${response.statusCode}';
+      _locationsError.value = TKeys.errLoadSkus.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Inventory locations fetch error: $e');
-      _locationsError.value = 'Network error. Please try again.';
+      _locationsError.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isLoadingLocations.value = false;
@@ -238,25 +238,25 @@ class InventoryController extends GetxController {
           _byCode.value = detail;
           return detail;
         }
-        _byCodeError.value = 'Unexpected response format.';
+        _byCodeError.value = TKeys.errUnexpectedFormat.tr;
         return null;
       }
 
       _byCode.value = null;
       if (response.statusCode == 404) {
-        _byCodeError.value = 'No SKU found for "$trimmed".';
+        _byCodeError.value = TKeys.errNoSkuFor.trParams({'query': 'trimmed'});
         return null;
       }
       if (response.statusCode == 403) {
-        _byCodeError.value = 'Warehouse is only available for managed sellers.';
+        _byCodeError.value = TKeys.svcManagedSellersOnly.tr;
         return null;
       }
 
-      _byCodeError.value = 'Failed to resolve SKU: ${response.statusCode}';
+      _byCodeError.value = TKeys.errResolveSku.trParams({'code': '${response.statusCode}'});
       return null;
     } catch (e) {
       log('Inventory by-code fetch error: $e');
-      _byCodeError.value = 'Network error. Please try again.';
+      _byCodeError.value = TKeys.svcNetworkError.tr;
       return null;
     } finally {
       _isResolvingCode.value = false;
@@ -319,20 +319,20 @@ class InventoryController extends GetxController {
           return;
         }
         _suggestions.clear();
-        _suggestError.value = 'Unexpected response format.';
+        _suggestError.value = TKeys.errUnexpectedFormat.tr;
         return;
       }
 
       _suggestions.clear();
       if (response.statusCode == 403) {
-        _suggestError.value = 'Warehouse is only available for managed sellers.';
+        _suggestError.value = TKeys.svcManagedSellersOnly.tr;
         return;
       }
-      _suggestError.value = 'Search failed: ${response.statusCode}';
+      _suggestError.value = TKeys.errSearchFailed.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Location suggest error: $e');
       _suggestions.clear();
-      _suggestError.value = 'Network error. Please try again.';
+      _suggestError.value = TKeys.svcNetworkError.tr;
     } finally {
       _isSuggesting.value = false;
     }
@@ -467,7 +467,7 @@ class InventoryController extends GetxController {
           return;
         }
         _searchResult.value = null;
-        _searchError.value = 'Unexpected response format.';
+        _searchError.value = TKeys.errUnexpectedFormat.tr;
         return;
       }
 
@@ -478,14 +478,14 @@ class InventoryController extends GetxController {
         return;
       }
       if (response.statusCode == 403) {
-        _searchError.value = 'Warehouse is only available for managed sellers.';
+        _searchError.value = TKeys.svcManagedSellersOnly.tr;
         return;
       }
-      _searchError.value = 'Search failed: ${response.statusCode}';
+      _searchError.value = TKeys.errSearchFailed.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Inventory search error: $e');
       _searchResult.value = null;
-      _searchError.value = 'Network error. Please try again.';
+      _searchError.value = TKeys.svcNetworkError.tr;
     } finally {
       _isSearching.value = false;
     }
@@ -590,7 +590,7 @@ class InventoryController extends GetxController {
     List<String> imageKeys = const [],
     String? locationId,
   }) async {
-    if (productId.isEmpty) return 'Missing product reference.';
+    if (productId.isEmpty) return TKeys.errMissingProductRef.tr;
 
     try {
       final body = <String, dynamic>{
@@ -612,19 +612,19 @@ class InventoryController extends GetxController {
       if (response.isSuccess) {
         final json = response.json;
         if (json['success'] == true) return null;
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the report and try again.';
+        return TKeys.errCheckReport.tr;
       }
-      return 'Failed to submit report: ${response.statusCode}';
+      return TKeys.errSubmitReport.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('[product-issue] submit error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     }
   }
 
@@ -761,22 +761,22 @@ class InventoryController extends GetxController {
       if (response.isSuccess) {
         final body = response.json;
         if (body['success'] == true) return null;
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 404) {
-        return 'SKU not found.';
+        return TKeys.errSkuNotFound.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the product details and try again.';
+        return TKeys.errCheckProductDetails.tr;
       }
-      return 'Failed to add product: ${response.statusCode}';
+      return TKeys.errAddProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Add placement error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     }
   }
 
@@ -808,22 +808,22 @@ class InventoryController extends GetxController {
       if (response.isSuccess) {
         final body = response.json;
         if (body['success'] == true) return null;
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 404) {
-        return 'SKU not found.';
+        return TKeys.errSkuNotFound.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the product details and try again.';
+        return TKeys.errCheckProductDetails.tr;
       }
-      return 'Failed to add product: ${response.statusCode}';
+      return TKeys.errAddProduct.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Add unknown product error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     }
   }
 
@@ -851,20 +851,20 @@ class InventoryController extends GetxController {
               .toList();
           return true;
         }
-        _tagsError.value = 'Unexpected response format.';
+        _tagsError.value = TKeys.errUnexpectedFormat.tr;
         return false;
       }
 
       if (response.statusCode == 403) {
-        _tagsError.value = 'Warehouse is only available for managed sellers.';
+        _tagsError.value = TKeys.svcManagedSellersOnly.tr;
         return false;
       }
 
-      _tagsError.value = 'Failed to load tags: ${response.statusCode}';
+      _tagsError.value = TKeys.errLoadTags.trParams({'code': '${response.statusCode}'});
       return false;
     } catch (e) {
       log('Inventory tags fetch error: $e');
-      _tagsError.value = 'Network error. Please try again.';
+      _tagsError.value = TKeys.svcNetworkError.tr;
       return false;
     } finally {
       _isLoadingTags.value = false;
@@ -917,20 +917,20 @@ class InventoryController extends GetxController {
           }
           return null;
         }
-        _tagsError.value = 'Unexpected response format.';
+        _tagsError.value = TKeys.errUnexpectedFormat.tr;
         return null;
       }
 
       if (response.statusCode == 409) {
-        _tagsError.value = 'A tag with that slug already exists.';
+        _tagsError.value = TKeys.errTagExists.tr;
         return null;
       }
 
-      _tagsError.value = 'Failed to create tag: ${response.statusCode}';
+      _tagsError.value = TKeys.errCreateTag.trParams({'code': '${response.statusCode}'});
       return null;
     } catch (e) {
       log('Inventory tag create error: $e');
-      _tagsError.value = 'Network error. Please try again.';
+      _tagsError.value = TKeys.svcNetworkError.tr;
       return null;
     } finally {
       _isCreatingTag.value = false;
@@ -995,23 +995,23 @@ class InventoryController extends GetxController {
           fetchStats();
           return null;
         }
-        return 'Unexpected response format.';
+        return TKeys.errUnexpectedFormat.tr;
       }
 
       if (response.statusCode == 409) {
-        return 'A SKU with that code already exists.';
+        return TKeys.errSkuExists.tr;
       }
       if (response.statusCode == 403) {
-        return 'Warehouse is only available for managed sellers.';
+        return TKeys.svcManagedSellersOnly.tr;
       }
       if (response.statusCode == 422) {
-        return 'Please check the SKU details and try again.';
+        return TKeys.errCheckSkuDetails.tr;
       }
 
-      return 'Failed to create SKU: ${response.statusCode}';
+      return TKeys.errCreateSku.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Inventory location create error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     } finally {
       _isCreatingLocation.value = false;
     }

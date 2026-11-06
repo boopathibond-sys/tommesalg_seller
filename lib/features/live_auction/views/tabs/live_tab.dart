@@ -698,12 +698,19 @@ class _ChatOverlaySection extends StatelessWidget {
       final disabled = ctrl.chatDisabled;
       final ended = ctrl.streamEnded.value;
       final ready = ctrl.chatReady.value;
+      // A scheduled stream isn't on air yet — the seller can't post until
+      // they go live.
+      final scheduled = ctrl.stream?.isScheduled ?? false;
       return LiveChatOverlay(
         messages: messages,
         displayNames: names,
-        canSend: ready && !disabled && !ended,
+        canSend: ready && !disabled && !ended && !scheduled,
         // The field says why it is dead rather than just greying out.
-        hint: disabled ? TKeys.ctChatDisabled.tr : TKeys.ctMessageHint.tr,
+        hint: scheduled
+            ? TKeys.ctChatOpensWhenLive.tr
+            : disabled
+                ? TKeys.ctChatDisabled.tr
+                : TKeys.ctMessageHint.tr,
         showInput: !ended,
         onSend: ctrl.sendChat,
         onLongPressMessage: (m) => showChatModerationSheet(context, ctrl, m),
@@ -1292,14 +1299,14 @@ class _PreviewBadge extends StatelessWidget {
         color: Colors.black.withOpacity(0.55),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.visibility_off_rounded, size: 14, color: Colors.white),
-          SizedBox(width: 6),
+          const Icon(Icons.visibility_off_rounded, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
           Text(
-            'Preview only · buyers can’t see you yet',
-            style: TextStyle(
+            TKeys.ltPreviewOnly.tr,
+            style: const TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
               color: Colors.white,
@@ -1323,15 +1330,15 @@ class _StoppedBadge extends StatelessWidget {
         color: AppColors.vipps.withOpacity(0.9),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.pause_circle_filled_rounded,
+          const Icon(Icons.pause_circle_filled_rounded,
               size: 14, color: Colors.white),
-          SizedBox(width: 6),
+          const SizedBox(width: 6),
           Text(
-            'Live stopped · buyers can’t see you',
-            style: TextStyle(
+            TKeys.ltLiveStopped.tr,
+            style: const TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
               color: Colors.white,

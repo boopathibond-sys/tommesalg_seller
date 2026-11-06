@@ -71,7 +71,7 @@ class MeasurementService {
 
       if (!response.isSuccess) {
         return MeasurementSaveResult(
-          error: _errorMessage(response) ?? 'Could not save measurements.',
+          error: _errorMessage(response) ?? TKeys.errSaveMeasurements.tr,
         );
       }
 
@@ -101,10 +101,10 @@ class MeasurementService {
       );
 
       if (response.isSuccess || response.statusCode == 404) return null;
-      return _errorMessage(response) ?? 'Could not remove a measurement.';
+      return _errorMessage(response) ?? TKeys.errRemoveMeasurement.tr;
     } catch (e) {
       log('Measurement delete error: $e');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     }
   }
 
@@ -153,8 +153,8 @@ class MeasurementService {
       return SizeSpecUploadResult(
         error: _errorMessage(response) ??
             (response.statusCode == 413
-                ? 'That photo is too large — the limit is 5 MB.'
-                : 'Could not upload the photo (${response.statusCode}).'),
+                ? TKeys.errPhotoTooLarge.tr
+                : TKeys.errUploadPhoto.trParams({'code': '${response.statusCode}'})),
       );
     } catch (e) {
       log('Size-spec image upload error: $e', name: 'Measurements');
@@ -188,10 +188,10 @@ class MeasurementService {
 
       if (response.isSuccess) return null;
       return _errorMessage(response) ??
-          'Could not save the photos (${response.statusCode}).';
+          TKeys.errSavePhotos.trParams({'code': '${response.statusCode}'});
     } catch (e) {
       log('Size-spec images save error: $e', name: 'Measurements');
-      return 'Network error. Please try again.';
+      return TKeys.svcNetworkError.tr;
     }
   }
 
@@ -208,15 +208,15 @@ class MeasurementService {
 
     switch (response.statusCode) {
       case 400:
-        return 'This measurement type is not supported for this product.';
+        return TKeys.errMeasurementUnsupported.tr;
       case 403:
-        return 'Measurements are only available for managed sellers.';
+        return TKeys.errMeasurementsManagedOnly.tr;
       case 404:
-        return 'This product no longer exists.';
+        return TKeys.errProductGone.tr;
       case 422:
-        return 'Please check the measurements and try again.';
+        return TKeys.errCheckMeasurements.tr;
       case 429:
-        return 'Too many attempts. Please wait a moment and try again.';
+        return TKeys.errTooManyAttemptsWait.tr;
     }
     return null;
   }

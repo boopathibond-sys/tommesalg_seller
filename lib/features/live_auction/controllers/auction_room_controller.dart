@@ -446,7 +446,7 @@ class AuctionRoomController extends GetxController {
       bootstrapError.value = e.message;
       log('Auction room bootstrap error: $e');
     } catch (e) {
-      bootstrapError.value = 'Could not open the auction room. Please try again.';
+      bootstrapError.value = TKeys.errOpenRoom.tr;
       log('Auction room bootstrap error: $e');
     } finally {
       isBootstrapping.value = false;
@@ -995,7 +995,7 @@ class AuctionRoomController extends GetxController {
       final userId = _rtmUserId;
       if (userId == null || userId.isEmpty) {
         chatReady.value = false;
-        chatError.value = 'Chat unavailable — no signed-in user.';
+        chatError.value = TKeys.errChatNoUser.tr;
         return;
       }
       final token = await _tokenService.fetchRtmToken(userId: userId);
@@ -1014,7 +1014,7 @@ class AuctionRoomController extends GetxController {
       chatReady.value = true;
     } catch (e) {
       chatReady.value = false;
-      chatError.value = 'Chat failed to connect. Tap to retry.';
+      chatError.value = TKeys.errChatConnect.tr;
       log('startChat error: $e');
     }
   }
@@ -1117,6 +1117,8 @@ class AuctionRoomController extends GetxController {
     final trimmed = text.trim();
     final userId = _rtmUserId;
     if (trimmed.isEmpty || userId == null) return;
+    // No chat before the stream goes live.
+    if (stream?.isScheduled ?? false) return;
     final id = _uuid.v4();
     final ts = DateTime.now().millisecondsSinceEpoch;
     // Echo locally so the seller sees their own line immediately (RTM does not
@@ -1127,7 +1129,7 @@ class AuctionRoomController extends GetxController {
       senderId: userId,
       text: trimmed,
       timestamp: ts,
-      senderName: 'You',
+      senderName: TKeys.chatYou.tr,
       isMine: true,
     ));
     if (messages.length > 300) messages.removeRange(0, messages.length - 300);
@@ -1189,7 +1191,7 @@ class AuctionRoomController extends GetxController {
     try {
       await _chatApi.mute(streamId, userId);
       await refreshSnapshot();
-      _showInfo('User muted.');
+      _showInfo(TKeys.arUserMuted.tr);
     } on AuctionApiException catch (e) {
       _showError(_friendly(e));
     } catch (e) {
@@ -2067,7 +2069,7 @@ class AuctionRoomController extends GetxController {
       _showError(e.message);
     } catch (e) {
       log('moveProduct error: $e');
-      _showError('Network error. Please try again.');
+      _showError(TKeys.svcNetworkError.tr);
     } finally {
       // Reconcile the view with server truth now the drag has been persisted.
       _reorderingQueue = false;
@@ -2105,7 +2107,7 @@ class AuctionRoomController extends GetxController {
       _resyncAfterRejection(e);
     } catch (e) {
       log('queue mutation error: $e');
-      _showError('Network error. Please try again.');
+      _showError(TKeys.svcNetworkError.tr);
     } finally {
       queueActionLoading.value = false;
     }
@@ -2142,7 +2144,7 @@ class AuctionRoomController extends GetxController {
       return false;
     } catch (e) {
       log('startAuction error: $e');
-      _showError('Network error. Please try again.');
+      _showError(TKeys.svcNetworkError.tr);
       return false;
     } finally {
       startLoading.value = false;
@@ -2196,7 +2198,7 @@ class AuctionRoomController extends GetxController {
       _applySnapshot(result.snapshot);
       if (ending != null) _concludeLocally(ending.id);
       if (result.depletedRandomProductId != null) {
-        _showInfo('A random product ran out of stock and was removed.');
+        _showInfo(TKeys.arRandomOutOfStock.tr);
       }
       // The /end echo is a partial snapshot: it may not mention the queue at
       // all and the winning order lands a moment later. Pull both rather than
@@ -2296,7 +2298,7 @@ class AuctionRoomController extends GetxController {
       return false;
     } catch (e) {
       log('goLive error: $e');
-      _showError('Could not go live. Please try again.');
+      _showError(TKeys.errGoLive.tr);
       return false;
     } finally {
       goLiveLoading.value = false;
@@ -2384,7 +2386,7 @@ class AuctionRoomController extends GetxController {
         }
       }
       await refreshSnapshot();
-      _showInfo('Stream extended by $minutes min.');
+      _showInfo(TKeys.arStreamExtended.trParams({'minutes': '$minutes'}));
       return true;
     } on AuctionApiException catch (e) {
       _showError(_friendly(e));
@@ -2424,14 +2426,14 @@ class AuctionRoomController extends GetxController {
       // Show it straight away; the refresh below reconciles with the server.
       announcement.value = text;
       unawaited(refreshSnapshot());
-      _showInfo('Announcement is live.');
+      _showInfo(TKeys.arAnnouncementLive.tr);
       return true;
     } on AuctionApiException catch (e) {
       _showError(_friendly(e));
       return false;
     } catch (e) {
       log('saveAnnouncement error: $e');
-      _showError('Network error. Please try again.');
+      _showError(TKeys.svcNetworkError.tr);
       return false;
     } finally {
       announcementSaving.value = false;
@@ -2468,7 +2470,7 @@ class AuctionRoomController extends GetxController {
   Future<bool> saveShowNotes(String content) async {
     if (showNotesSaving.value) return false;
     if (!canEditShowNotes) {
-      _showError('Show notes can only be edited before the stream goes live.');
+      _showError(TKeys.snLockedLive.tr);
       return false;
     }
     final text = content.trim();
@@ -2482,14 +2484,14 @@ class AuctionRoomController extends GetxController {
       // Show it straight away; the refresh below reconciles with the server.
       showNotes.value = text.isEmpty ? null : text;
       unawaited(refreshSnapshot());
-      _showInfo(text.isEmpty ? 'Show notes cleared.' : 'Show notes updated.');
+      _showInfo(text.isEmpty ? TKeys.snCleared.tr : TKeys.snUpdated.tr);
       return true;
     } on AuctionApiException catch (e) {
       _showError(_friendly(e));
       return false;
     } catch (e) {
       log('saveShowNotes error: $e');
-      _showError('Network error. Please try again.');
+      _showError(TKeys.svcNetworkError.tr);
       return false;
     } finally {
       showNotesSaving.value = false;
@@ -2504,14 +2506,14 @@ class AuctionRoomController extends GetxController {
       await _api.clearAnnouncement(streamId);
       announcement.value = null;
       unawaited(refreshSnapshot());
-      _showInfo('Announcement ended.');
+      _showInfo(TKeys.arAnnouncementEnded.tr);
       return true;
     } on AuctionApiException catch (e) {
       _showError(_friendly(e));
       return false;
     } catch (e) {
       log('endAnnouncement error: $e');
-      _showError('Network error. Please try again.');
+      _showError(TKeys.svcNetworkError.tr);
       return false;
     } finally {
       announcementSaving.value = false;
@@ -3334,7 +3336,7 @@ class AuctionRoomController extends GetxController {
       _resyncAfterRejection(e);
     } catch (e) {
       log('addCatalogProducts error: $e');
-      _showError('Network error. Please try again.');
+      _showError(TKeys.svcNetworkError.tr);
     } finally {
       queueActionLoading.value = false;
     }
@@ -3388,14 +3390,13 @@ class AuctionRoomController extends GetxController {
     } on AuctionApiException catch (e) {
       _showError(productId == null
           ? e.message
-          : '"$title" was created but could not be queued: ${e.message}');
+          : TKeys.errCreatedNotQueued.trParams({'title': '$title', 'error': '${e.message}'}));
       return false;
     } catch (e) {
       log('createRandomProduct error: $e');
       _showError(productId == null
-          ? 'Could not create the product. Please try again.'
-          : '"$title" was created but could not be queued. Add it from the '
-              'product list.');
+          ? TKeys.errCreateProduct.tr
+          : TKeys.errCreatedNotQueuedRetry.trParams({'title': title}));
       return false;
     } finally {
       creatingRandomProduct.value = false;
@@ -3443,7 +3444,7 @@ class AuctionRoomController extends GetxController {
             name: (product is Map
                     ? (product['name'] ?? item['requestedName'])
                     : item['requestedName']) as String? ??
-                'Product',
+                TKeys.productFallback.tr,
             image: product is Map
                 ? (product['thumbnailUrl'] ?? product['image']) as String?
                 : null,
@@ -3492,16 +3493,16 @@ class AuctionRoomController extends GetxController {
   String _friendly(AuctionApiException e) {
     switch (e.code) {
       case 'AUTH_FORBIDDEN':
-        return 'This device cannot control the auction. Request control from the controlling device.';
+        return TKeys.errNoControl.tr;
       case 'UNAUTHORIZED':
       case 'AUTH_EXPIRED':
-        return 'Session expired — please try again.';
+        return TKeys.errSessionExpiredRetry.tr;
       case 'NOT_FOUND':
-        return 'This stream is no longer available.';
+        return TKeys.reqStreamNotFound.tr;
       case 'CONFLICT':
-        return 'The stream has ended.';
+        return TKeys.errStreamEnded.tr;
       case 'RATE_LIMITED':
-        return 'Too many requests — wait a moment.';
+        return TKeys.errTooManyRequests.tr;
       default:
         return e.message;
     }

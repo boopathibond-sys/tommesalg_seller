@@ -1,3 +1,6 @@
+import 'package:get/get.dart';
+import '../core/localization/translation_keys.dart';
+
 /// Payload of `GET /api/v1/seller/dashboard[?month=YYYY-MM]`.
 ///
 /// Mirrors the seller web dashboard: a per-calendar-month snapshot of the
@@ -193,12 +196,17 @@ String formatYearMonthLong(String yearMonth) {
   return '${_longMonths[month - 1]} $year';
 }
 
-const _shortMonths = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
+// Getters, not const lists: `.tr` must re-resolve when the language changes.
+List<String> get _shortMonths => [
+      TKeys.monthShort1.tr, TKeys.monthShort2.tr, TKeys.monthShort3.tr,
+      TKeys.monthShort4.tr, TKeys.monthShort5.tr, TKeys.monthShort6.tr,
+      TKeys.monthShort7.tr, TKeys.monthShort8.tr, TKeys.monthShort9.tr,
+      TKeys.monthShort10.tr, TKeys.monthShort11.tr, TKeys.monthShort12.tr,
+    ];
 
-const _longMonths = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+List<String> get _longMonths => [
+      TKeys.monthLong1.tr, TKeys.monthLong2.tr, TKeys.monthLong3.tr,
+      TKeys.monthLong4.tr, TKeys.monthLong5.tr, TKeys.monthLong6.tr,
+      TKeys.monthLong7.tr, TKeys.monthLong8.tr, TKeys.monthLong9.tr,
+      TKeys.monthLong10.tr, TKeys.monthLong11.tr, TKeys.monthLong12.tr,
+    ];
